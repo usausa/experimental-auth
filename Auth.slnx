@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="Analyzers.ruleset" />
+    <File Path="Auth.sln.DotSettings" />
+    <File Path="CLAUDE.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="AuthServer/AuthServer.csproj" Id="086490a3-6493-42ac-81c7-1c7a3dd4f049" />
+  <Project Path="ResourceServer/ResourceServer.csproj" Id="7fa0b037-1d26-4192-ab83-c5bab31dd292" />
+  <Project Path="TestClient/TestClient.csproj" Id="b77a8085-41f0-4e3b-838d-45f68432e939" />
+</Solution>
