@@ -1,39 +1,71 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using ResourceServer.Endpoints;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+var jwt = builder.Configuration.GetSection("Jwt");
+var authority = jwt["Authority"] ?? throw new InvalidOperationException("Jwt:Authority is required");
+var audience = jwt["Audience"] ?? throw new InvalidOperationException("Jwt:Audience is required");
+var requireHttps = jwt.GetValue("RequireHttpsMetadata", false);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = authority;
+        options.Audience = audience;
+        options.RequireHttpsMetadata = requireHttps;
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = authority,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            NameClaimType = "sub",
+            RoleClaimType = "role"
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("api.read", policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(ctx => HasScope(ctx.User, "api.read")));
+    options.AddPolicy("api.write", policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(ctx => HasScope(ctx.User, "api.write")));
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapProtectedEndpoints();
 
 app.Run();
 
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+static bool HasScope(System.Security.Claims.ClaimsPrincipal user, string required)
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    var scopeClaim = user.FindFirst("scope")?.Value;
+    if (string.IsNullOrEmpty(scopeClaim))
+    {
+        return false;
+    }
+    foreach (var s in scopeClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+    {
+        if (string.Equals(s, required, StringComparison.Ordinal))
+        {
+            return true;
+        }
+    }
+    return false;
 }
