@@ -7,4 +7,9 @@
     <RootNamespace>TestClient</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.7" />
+    <PackageReference Include="Usa.Smart.CommandLine.Hosting" Version="2.4.0" />
+  </ItemGroup>
+
 </Project>

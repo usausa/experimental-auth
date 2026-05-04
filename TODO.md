@@ -25,6 +25,8 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] ResourceServer: 保護エンドポイント実装 (`GET /api/protected`)
 - [x] ResourceServer: スコープベースの認可ポリシー (`api.read` / `api.write`)
 - [x] TestClient: client_credentials フロー実装
+- [x] TestClient: コマンドベース CLI へ移行 (`token` / `api` / `refresh` / `discovery` 他)
+- [x] TestClient: トークンファイル永続化 (`~/.testclient/tokens.json`)
 - [x] 結合テスト: トークン取得 → API 呼び出し成功 (TestClient で実機確認済み)
 - [ ] 結合テスト: 不正トークンで 401 応答確認
 
