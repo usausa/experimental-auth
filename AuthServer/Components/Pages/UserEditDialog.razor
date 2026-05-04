@@ -1,0 +1,29 @@
+@* User add/edit dialog *@
+<MudDialog>
+    <TitleContent>@(IsNew ? "Add User" : "Edit User")</TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="username" Label="Username" Required="true" Disabled="!IsNew"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        @if (IsNew)
+        {
+            <MudTextField @bind-Value="password" Label="Password" Required="true"
+                          InputType="InputType.Password"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        }
+        <MudTextField @bind-Value="name" Label="Display Name"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="givenName" Label="Given Name"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="familyName" Label="Family Name"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="email" Label="Email"
+                      InputType="InputType.Email"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudCheckBox @bind-Value="emailVerified" Label="Email Verified" Color="Color.Primary" Class="mb-1" />
+        <MudCheckBox @bind-Value="isActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>

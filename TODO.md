@@ -30,9 +30,10 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 
 ## Phase 2: Authorization Code Flow + PKCE
 
-- [ ] Blazor Server プロジェクト統合（AuthServer 内）
-- [ ] Dapper によるユーザー情報データアクセス実装
-- [ ] パスワードハッシュ化・検証
+- [x] MudBlazor 導入 (AuthServer に `MudBlazor` パッケージ追加 / MainLayout・NavMenu 更新)
+- [x] ユーザー情報モデル (`Models/User.cs`)
+- [x] `UserService` 実装 (CRUD + パスワード変更 + ユーザー名重複チェック)
+- [x] ユーザー管理 UI: 一覧・追加・編集・パスワード変更・削除 (`Pages/Users.razor`)
 - [ ] Dapper による認可コードデータアクセス実装
 - [ ] Dapper によるリフレッシュトークンデータアクセス実装
 - [ ] `/connect/authorize` 実装（パラメータ検証、PKCE、state）

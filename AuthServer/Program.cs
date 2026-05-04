@@ -3,6 +3,7 @@ using AuthServer.Database;
 using AuthServer.Endpoints;
 using AuthServer.Models;
 using AuthServer.Services;
+using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,9 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<SigningKeyService>();
 builder.Services.AddSingleton<ClientService>();
 builder.Services.AddSingleton<TokenService>();
+builder.Services.AddSingleton<UserService>();
+
+builder.Services.AddMudServices();
 
 var app = builder.Build();
 
