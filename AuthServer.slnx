@@ -5,7 +5,7 @@
     <File Path=".gitignore" />
     <File Path="AGENTS.md" />
     <File Path="Analyzers.ruleset" />
-    <File Path="Auth.sln.DotSettings" />
+    <File Path="AuthServer.sln.DotSettings" />
     <File Path="CLAUDE.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Build.targets" />
