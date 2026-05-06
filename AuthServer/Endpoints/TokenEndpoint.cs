@@ -10,13 +10,22 @@ public static class TokenEndpoint
 {
     public static void MapTokenEndpoint(this WebApplication app)
     {
-        app.MapPost("/connect/token", HandleToken).DisableAntiforgery();
+        app.MapPost("/connect/token", HandleToken)
+            .DisableAntiforgery()
+            .WithTags("Token")
+            .WithSummary("トークンの発行")
+            .WithDescription("OAuth 2.0 / OpenID Connect のトークンを発行します(RFC 6749)。サポートするグラントタイプ: client_credentials / authorization_code / refresh_token。クライアント認証は client_secret_post または client_secret_basic に対応。")
+            .Accepts<IFormCollection>("application/x-www-form-urlencoded")
+            .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .AllowAnonymous();
     }
 
     //--------------------------------------------------------------------------------
     // トークン発行エンドポイント
     // POST /connect/token
-    // OAuth 2.0 / OpenID Connect のトークンを発行する標準エンドポイント（RFC 6749）。
+    // OAuth 2.0 / OpenID Connect のトークンを発行する標準エンドポイント(RFC 6749)。
     // サポートするグラントタイプ: client_credentials / authorization_code / refresh_token。
     // クライアント認証は client_secret_post または client_secret_basic に対応。
     //--------------------------------------------------------------------------------

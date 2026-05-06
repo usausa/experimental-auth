@@ -6,11 +6,24 @@ using AuthServer.Services;
 
 using MudBlazor.Services;
 
+using Scalar.AspNetCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((doc, _, _) =>
+    {
+        doc.Info.Title = "AuthServer API";
+        doc.Info.Version = "v1";
+        doc.Info.Description = "OAuth 2.0 / OpenID Connect 認証サーバーの公開エンドポイント";
+        return Task.CompletedTask;
+    });
+});
 
 builder.Services.Configure<AuthServerOptions>(builder.Configuration.GetSection("AuthServer"));
 
@@ -37,6 +50,15 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
+}
+else
+{
+    app.MapOpenApi("/api-docs/{documentName}.json");
+    app.MapScalarApiReference("/api-docs", options =>
+    {
+        options.WithTitle("AuthServer API")
+               .WithOpenApiRoutePattern("/api-docs/{documentName}.json");
+    });
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseAntiforgery();

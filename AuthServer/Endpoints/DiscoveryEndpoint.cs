@@ -8,14 +8,19 @@ public static class DiscoveryEndpoint
 {
     public static void MapDiscoveryEndpoint(this WebApplication app)
     {
-        app.MapGet("/.well-known/openid-configuration", HandleDiscovery);
+        app.MapGet("/.well-known/openid-configuration", HandleDiscovery)
+            .WithTags("Discovery")
+            .WithSummary("OpenID Connect Discovery ドキュメントの取得")
+            .WithDescription("認証サーバーのメタデータ(トークンエンドポイント URL、サポートするグラントタイプ等)を返します(RFC 8414 / OpenID Connect Discovery 1.0)。")
+            .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .AllowAnonymous();
     }
 
     //--------------------------------------------------------------------------------
     // OpenID Connect Discovery エンドポイント
     // GET /.well-known/openid-configuration
-    // クライアントが認証サーバーのメタデータ（トークンエンドポイントURL、サポートするグラントタイプ等）を
-    // 取得するための標準エンドポイント（RFC 8414 / OpenID Connect Discovery 1.0）。
+    // クライアントが認証サーバーのメタデータ(トークンエンドポイントURL、サポートするグラントタイプ等)を
+    // 取得するための標準エンドポイント(RFC 8414 / OpenID Connect Discovery 1.0)。
     //--------------------------------------------------------------------------------
 
     private static IResult HandleDiscovery(HttpContext context, IOptions<AuthServerOptions> options)

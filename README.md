@@ -37,12 +37,12 @@ dotnet run -- <command> [options]
 
 ### ユースケース別使用例
 
-#### ユースケース 1: ユーザー認証（authorization_code + PKCE）
+#### ユースケース 1: ユーザー認証(authorization_code + PKCE)
 
-ブラウザを介してユーザーがログインし、その認可を得てアクセストークンと ID Token を取得するフローです。（Phase 2 実装予定）
+ブラウザを介してユーザーがログインし、その認可を得てアクセストークンと ID Token を取得するフローです。(Phase 2 実装予定)
 
 ```bash
-# 1. ブラウザ経由でユーザー認証・認可コード取得 → トークン交換（Phase 2）
+# 1. ブラウザ経由でユーザー認証・認可コード取得 → トークン交換(Phase 2)
 dotnet run -- token \
   --auth http://localhost:5080 \
   --grant authorization_code \
@@ -55,11 +55,11 @@ dotnet run -- api \
   --resource http://localhost:5180 \
   --path /api/protected
 
-# 3. ID Token のユーザー情報を取得する（未実装: Phase 3）
+# 3. ID Token のユーザー情報を取得する(未実装: Phase 3)
 dotnet run -- userinfo \
   --auth http://localhost:5080
 
-# 4. リフレッシュトークンでアクセストークンを更新する（未実装: Phase 2）
+# 4. リフレッシュトークンでアクセストークンを更新する(未実装: Phase 2)
 dotnet run -- refresh \
   --auth http://localhost:5080 \
   --client-id test-webapp \
@@ -71,12 +71,12 @@ dotnet run -- api \
   --path /api/protected
 ```
 
-#### ユースケース 2: M2M 通信（client_credentials）
+#### ユースケース 2: M2M 通信(client_credentials)
 
 サーバー間通信のように、ユーザーを介さずクライアントがアクセストークンを取得して保護 API を呼び出す最もシンプルなフローです。
 
 ```bash
-# 1. Discovery ドキュメントでサーバー設定を確認（任意）
+# 1. Discovery ドキュメントでサーバー設定を確認(任意)
 dotnet run -- discovery --auth http://localhost:5080
 
 # 2. client_credentials グラントでアクセストークンを取得
@@ -93,13 +93,13 @@ dotnet run -- api \
   --path /api/protected \
   --method GET
 
-# 4. トークンのメタ情報を確認する（未実装: Phase 4）
+# 4. トークンのメタ情報を確認する(未実装: Phase 4)
 dotnet run -- introspect \
   --auth http://localhost:5080 \
   --client-id test-client \
   --client-secret test-secret
 
-# 5. 使い終わったらトークンを失効させる（未実装: Phase 4）
+# 5. 使い終わったらトークンを失効させる(未実装: Phase 4)
 dotnet run -- revoke \
   --auth http://localhost:5080 \
   --client-id test-client \
@@ -150,9 +150,9 @@ dotnet run -- api \
 | `--grant` | `-g` | `client_credentials` | グラントタイプ (`client_credentials` \| `authorization_code`) |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
-| `--scope` | `-s` | `api.read api.write` | スコープ（スペース区切り） |
-| `--username` | `-u` | — | ユーザー名（password グラント用） |
-| `--password` | `-p` | — | パスワード（password グラント用） |
+| `--scope` | `-s` | `api.read api.write` | スコープ(スペース区切り) |
+| `--username` | `-u` | — | ユーザー名(password グラント用) |
+| `--password` | `-p` | — | パスワード(password グラント用) |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
 
 #### `api`
@@ -200,18 +200,18 @@ dotnet run -- api \
 |--------------|---------|---------|-------|------|
 | `/.well-known/openid-configuration` | GET | ✅ 実装済み | 1 | OIDC Discovery ドキュメントを返す |
 | `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
-| `/connect/token` | POST | ✅ 実装済み | 1 | アクセストークン・リフレッシュトークンを発行する（`client_credentials` グラント実装済み） |
-| `/connect/authorize` | GET | 🔲 未実装 | 2 | Authorization Code Flow の認可エンドポイント（PKCE 対応） |
+| `/connect/token` | POST | ✅ 実装済み | 1 | アクセストークン・リフレッシュトークンを発行する(`client_credentials` グラント実装済み) |
+| `/connect/authorize` | GET | 🔲 未実装 | 2 | Authorization Code Flow の認可エンドポイント(PKCE 対応) |
 | `/connect/token` (authorization_code) | POST | 🔲 未実装 | 2 | 認可コードをアクセストークン・ID Token・リフレッシュトークンに交換する |
 | `/connect/token` (refresh_token) | POST | 🔲 未実装 | 2 | リフレッシュトークンで新しいアクセストークンを発行する |
-| `/account/login` | GET/POST | 🔲 未実装 | 2 | ユーザーログイン画面（Blazor） |
-| `/connect/userinfo` | GET | 🔲 未実装 | 3 | Bearer トークンを持つユーザーのクレームを返す（OIDC UserInfo エンドポイント） |
-| `/account/consent` | GET/POST | 🔲 未実装 | 3 | スコープ同意画面（Blazor） |
-| `/connect/revoke` | POST | 🔲 未実装 | 4 | アクセストークンまたはリフレッシュトークンを失効させる（RFC 7009） |
-| `/connect/introspect` | POST | 🔲 未実装 | 4 | トークンのアクティブ状態・メタ情報を返す（RFC 7662） |
-| `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout（セッション破棄・RP へのリダイレクト） |
-| `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント（RFC 8628） |
-| `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration（RFC 7591） |
+| `/account/login` | GET/POST | 🔲 未実装 | 2 | ユーザーログイン画面(Blazor) |
+| `/connect/userinfo` | GET | 🔲 未実装 | 3 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
+| `/account/consent` | GET/POST | 🔲 未実装 | 3 | スコープ同意画面(Blazor) |
+| `/connect/revoke` | POST | 🔲 未実装 | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
+| `/connect/introspect` | POST | 🔲 未実装 | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
+| `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄・RP へのリダイレクト) |
+| `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628) |
+| `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
 ---
 
@@ -245,7 +245,7 @@ dotnet run -- api \
 | Device Authorization Grant | RFC 8628 | CLI/IoT 向け標準 | 🔲 未実装 | 5 |
 | Dynamic Client Registration | RFC 7591 / 7592 | SaaS 向け標準 | 🔲 未実装 | 5 |
 
-### spec 範囲外の拡張機能（実装予定なし / 参考）
+### spec 範囲外の拡張機能(実装予定なし / 参考)
 
 | 機能 | 仕様 | 性格 |
 |------|------|------|

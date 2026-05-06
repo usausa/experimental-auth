@@ -1,11 +1,33 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 
 using ResourceServer.Endpoints;
 
+using Scalar.AspNetCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((doc, _, _) =>
+    {
+        doc.Info.Title = "ResourceServer API";
+        doc.Info.Version = "v1";
+        doc.Info.Description = "OAuth 2.0 Bearer トークンで保護されたリソース API。";
+        var components = doc.Components ?? new OpenApiComponents();
+        components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "AuthServer から発行された JWT アクセストークンを入力してください。"
+        };
+        doc.Components = components;
+        return Task.CompletedTask;
+    });
+});
 
 var jwt = builder.Configuration.GetSection("Jwt");
 var authority = jwt["Authority"] ?? throw new InvalidOperationException("Jwt:Authority is required");
@@ -42,7 +64,13 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi("/api-docs/{documentName}.json");
+    app.MapScalarApiReference("/api-docs", options =>
+    {
+        options.WithTitle("ResourceServer API")
+               .WithOpenApiRoutePattern("/api-docs/{documentName}.json")
+               .AddHttpAuthentication("Bearer", scheme => { scheme.Token = string.Empty; });
+    });
 }
 
 app.UseAuthentication();

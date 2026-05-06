@@ -10,14 +10,19 @@ public static class JwksEndpoint
 {
     public static void MapJwksEndpoint(this WebApplication app)
     {
-        app.MapGet("/.well-known/jwks.json", HandleJwks);
+        app.MapGet("/.well-known/jwks.json", HandleJwks)
+            .WithTags("Discovery")
+            .WithSummary("JSON Web Key Set (JWKS) の取得")
+            .WithDescription("アクセストークンの署名検証に使用する公開鍵一覧を返します(RFC 7517)。")
+            .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .AllowAnonymous();
     }
 
     //--------------------------------------------------------------------------------
     // JSON Web Key Set (JWKS) エンドポイント
     // GET /.well-known/jwks.json
     // リソースサーバーがアクセストークンの署名検証に使用する公開鍵一覧を返す
-    // 標準エンドポイント（RFC 7517）。現在有効なすべての署名鍵を RSA 公開鍵形式で返す。
+    // 標準エンドポイント(RFC 7517)。現在有効なすべての署名鍵を RSA 公開鍵形式で返す。
     //--------------------------------------------------------------------------------
 
     private static IResult HandleJwks(SigningKeyService keyService)
