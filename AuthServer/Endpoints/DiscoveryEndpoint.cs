@@ -11,6 +11,13 @@ public static class DiscoveryEndpoint
         app.MapGet("/.well-known/openid-configuration", HandleDiscovery);
     }
 
+    //--------------------------------------------------------------------------------
+    // OpenID Connect Discovery エンドポイント
+    // GET /.well-known/openid-configuration
+    // クライアントが認証サーバーのメタデータ（トークンエンドポイントURL、サポートするグラントタイプ等）を
+    // 取得するための標準エンドポイント（RFC 8414 / OpenID Connect Discovery 1.0）。
+    //--------------------------------------------------------------------------------
+
     private static IResult HandleDiscovery(HttpContext context, IOptions<AuthServerOptions> options)
     {
         var issuer = options.Value.Issuer.TrimEnd('/');

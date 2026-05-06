@@ -13,6 +13,13 @@ public static class JwksEndpoint
         app.MapGet("/.well-known/jwks.json", HandleJwks);
     }
 
+    //--------------------------------------------------------------------------------
+    // JSON Web Key Set (JWKS) エンドポイント
+    // GET /.well-known/jwks.json
+    // リソースサーバーがアクセストークンの署名検証に使用する公開鍵一覧を返す
+    // 標準エンドポイント（RFC 7517）。現在有効なすべての署名鍵を RSA 公開鍵形式で返す。
+    //--------------------------------------------------------------------------------
+
     private static IResult HandleJwks(SigningKeyService keyService)
     {
         var keys = new List<object>();

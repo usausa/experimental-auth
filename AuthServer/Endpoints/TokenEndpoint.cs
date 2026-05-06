@@ -13,6 +13,14 @@ public static class TokenEndpoint
         app.MapPost("/connect/token", HandleToken).DisableAntiforgery();
     }
 
+    //--------------------------------------------------------------------------------
+    // トークン発行エンドポイント
+    // POST /connect/token
+    // OAuth 2.0 / OpenID Connect のトークンを発行する標準エンドポイント（RFC 6749）。
+    // サポートするグラントタイプ: client_credentials / authorization_code / refresh_token。
+    // クライアント認証は client_secret_post または client_secret_basic に対応。
+    //--------------------------------------------------------------------------------
+
     private static async ValueTask<IResult> HandleToken(
         HttpContext context,
         ClientService clientService,
