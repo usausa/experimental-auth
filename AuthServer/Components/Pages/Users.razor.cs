@@ -2,7 +2,9 @@ namespace AuthServer.Components.Pages;
 
 using AuthServer.Models;
 using AuthServer.Services;
+
 using Microsoft.AspNetCore.Components;
+
 using MudBlazor;
 
 public partial class Users
@@ -39,10 +41,10 @@ public partial class Users
         await LoadUsersAsync();
     }
 
-    private async Task OnResourceServerChangedAsync(ResourceServer? server)
+    private Task OnResourceServerChangedAsync(ResourceServer? server)
     {
         selectedResourceServer = server;
-        await LoadUsersAsync();
+        return LoadUsersAsync();
     }
 
     private async Task LoadUsersAsync()

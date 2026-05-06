@@ -1,7 +1,9 @@
 namespace AuthServer.Components.Pages;
 
 using AuthServer.Services;
+
 using Microsoft.AspNetCore.Components;
+
 using MudBlazor;
 
 public partial class UserPasswordDialog

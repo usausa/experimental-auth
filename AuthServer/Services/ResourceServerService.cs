@@ -19,7 +19,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
 
     public async Task<IReadOnlyList<ResourceServer>> GetAllAsync()
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<ResourceServer>(
             $"SELECT {SelectColumns} FROM resource_servers ORDER BY name");
         return rows.ToList();
@@ -27,7 +27,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
 
     public async Task<IReadOnlyList<ResourceServer>> GetActiveAsync()
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<ResourceServer>(
             $"SELECT {SelectColumns} FROM resource_servers WHERE is_active = 1 ORDER BY name");
         return rows.ToList();
@@ -35,7 +35,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
 
     public async Task<ResourceServer?> FindByIdAsync(string id)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<ResourceServer>(
             $"SELECT {SelectColumns} FROM resource_servers WHERE resource_server_id = @Id",
             new { Id = id });
@@ -43,7 +43,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
 
     public async Task<bool> AudienceExistsAsync(string audience, string? excludeId = null)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var count = await connection.ExecuteScalarAsync<long>(
             "SELECT COUNT(*) FROM resource_servers WHERE audience = @Audience AND (@ExcludeId IS NULL OR resource_server_id <> @ExcludeId)",
             new { Audience = audience, ExcludeId = excludeId });
@@ -61,7 +61,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
         server.UpdatedAt = now;
         var nowStr = now.ToString("o", CultureInfo.InvariantCulture);
 
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             INSERT INTO resource_servers
                 (resource_server_id, name, audience, description, is_active, created_at, updated_at)
@@ -87,7 +87,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
         server.UpdatedAt = now;
         var nowStr = now.ToString("o", CultureInfo.InvariantCulture);
 
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             UPDATE resource_servers
             SET name        = @Name,
@@ -110,7 +110,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
 
     public async Task DeleteAsync(string id)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync(
             "DELETE FROM resource_servers WHERE resource_server_id = @Id",
             new { Id = id });

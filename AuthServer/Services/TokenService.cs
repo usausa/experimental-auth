@@ -23,7 +23,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             new(JwtRegisteredClaimNames.Sub, clientId),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             new("client_id", clientId),
-            new("scope", scopes ?? string.Empty)
+            new("scope", scopes)
         };
 
         var descriptor = new SecurityTokenDescriptor
@@ -40,7 +40,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         var token = handler.CreateToken(descriptor);
-        return new AccessTokenResult(token, options.AccessTokenLifetimeSeconds, scopes ?? string.Empty);
+        return new AccessTokenResult(token, options.AccessTokenLifetimeSeconds, scopes);
     }
 }
 

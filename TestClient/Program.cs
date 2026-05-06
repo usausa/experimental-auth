@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+
 using Smart.CommandLine.Hosting;
+
 using TestClient.Commands;
 
 var builder = CommandHost.CreateBuilder(args);

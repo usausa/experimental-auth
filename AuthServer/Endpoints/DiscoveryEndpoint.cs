@@ -1,6 +1,7 @@
 namespace AuthServer.Endpoints;
 
 using AuthServer.Models;
+
 using Microsoft.Extensions.Options;
 
 public static class DiscoveryEndpoint

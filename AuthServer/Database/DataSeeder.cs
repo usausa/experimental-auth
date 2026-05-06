@@ -1,8 +1,11 @@
 namespace AuthServer.Database;
 
 using System.Globalization;
+
 using AuthServer.Services;
+
 using Dapper;
+
 using Microsoft.Extensions.Logging;
 
 public static class DataSeeder

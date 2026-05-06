@@ -2,9 +2,12 @@ namespace AuthServer.Services;
 
 using System.Globalization;
 using System.Security.Cryptography;
+
 using AuthServer.Database;
 using AuthServer.Models;
+
 using Dapper;
+
 using Microsoft.IdentityModel.Tokens;
 
 /// <summary>RSA 署名鍵を SQLite に永続化し、JWT 署名と JWKS 公開で利用する。</summary>
@@ -21,6 +24,7 @@ public sealed class SigningKeyService
         EnsureKeyExists();
     }
 
+    // ReSharper disable once UnusedTupleComponentInReturnValue
     public (RsaSecurityKey Key, string Kid) GetActiveKey()
     {
         lock (gate)

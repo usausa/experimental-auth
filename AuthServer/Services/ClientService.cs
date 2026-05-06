@@ -23,13 +23,13 @@ public sealed class ClientService(DbConnectionFactory dbFactory)
 
     public async Task<Client?> FindByIdAsync(string clientId)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<Client>(
             $"SELECT {SelectColumns} FROM clients WHERE client_id = @ClientId AND is_active = 1",
             new { ClientId = clientId });
     }
 
-    public bool ValidateSecret(Client client, string? secret)
+    public static bool ValidateSecret(Client client, string? secret)
     {
         ArgumentNullException.ThrowIfNull(client);
         if (string.IsNullOrEmpty(client.ClientSecretHash))

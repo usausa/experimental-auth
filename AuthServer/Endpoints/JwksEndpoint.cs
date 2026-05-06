@@ -1,7 +1,9 @@
 namespace AuthServer.Endpoints;
 
 using System.Security.Cryptography;
+
 using AuthServer.Services;
+
 using Microsoft.IdentityModel.Tokens;
 
 public static class JwksEndpoint

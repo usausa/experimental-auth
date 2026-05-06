@@ -2,6 +2,7 @@ namespace AuthServer.Endpoints;
 
 using System.Net.Http.Headers;
 using System.Text;
+
 using AuthServer.Models;
 using AuthServer.Services;
 
@@ -38,7 +39,7 @@ public static class TokenEndpoint
         }
 
         var client = await clientService.FindByIdAsync(clientId);
-        if (client is null || !clientService.ValidateSecret(client, clientSecret))
+        if (client is null || !ClientService.ValidateSecret(client, clientSecret))
         {
             return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
         }

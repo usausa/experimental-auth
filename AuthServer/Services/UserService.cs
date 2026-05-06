@@ -24,7 +24,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
 
     public async Task<IReadOnlyList<User>> GetAllAsync()
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<User>(
             $"SELECT {SelectColumns} FROM users ORDER BY username");
         return rows.ToList();
@@ -32,7 +32,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
 
     public async Task<IReadOnlyList<User>> GetByResourceServerAsync(string resourceServerId)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<User>(
             $"SELECT {SelectColumns} FROM users WHERE resource_server_id = @ResourceServerId ORDER BY username",
             new { ResourceServerId = resourceServerId });
@@ -41,7 +41,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
 
     public async Task<User?> FindByIdAsync(string userId)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<User>(
             $"SELECT {SelectColumns} FROM users WHERE user_id = @UserId",
             new { UserId = userId });
@@ -49,7 +49,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
 
     public async Task<User?> FindByUsernameAsync(string username)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<User>(
             $"SELECT {SelectColumns} FROM users WHERE username = @Username",
             new { Username = username });
@@ -67,7 +67,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         user.UpdatedAt = now;
 
         var nowStr = now.ToString("o", CultureInfo.InvariantCulture);
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             INSERT INTO users
                 (user_id, resource_server_id, username, password_hash, email, email_verified, name, given_name, family_name,
@@ -101,7 +101,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         user.UpdatedAt = now;
         var nowStr = now.ToString("o", CultureInfo.InvariantCulture);
 
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             UPDATE users
             SET resource_server_id = @ResourceServerId,
@@ -137,7 +137,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
 
         var hash = PasswordHasher.Hash(newPassword);
         var nowStr = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             UPDATE users SET password_hash = @Hash, updated_at = @UpdatedAt WHERE user_id = @UserId
             """,
@@ -147,13 +147,13 @@ public sealed class UserService(DbConnectionFactory dbFactory)
     public async Task DeleteAsync(string userId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("DELETE FROM users WHERE user_id = @UserId", new { UserId = userId });
     }
 
     public async Task<bool> UsernameExistsAsync(string username, string? excludeUserId = null)
     {
-        using var connection = dbFactory.OpenConnection();
+        await using var connection = dbFactory.OpenConnection();
         var count = await connection.ExecuteScalarAsync<long>(
             "SELECT COUNT(*) FROM users WHERE username = @Username AND (@ExcludeId IS NULL OR user_id != @ExcludeId)",
             new { Username = username, ExcludeId = excludeUserId });

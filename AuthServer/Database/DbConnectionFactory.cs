@@ -2,7 +2,6 @@ namespace AuthServer.Database;
 
 using Microsoft.Data.Sqlite;
 
-/// <summary>Creates SQLite connections to the AuthServer database.</summary>
 public sealed class DbConnectionFactory
 {
     private readonly string connectionString;
