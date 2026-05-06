@@ -8,17 +8,18 @@ using Dapper;
 public sealed class UserService(DbConnectionFactory dbFactory)
 {
     private const string SelectColumns = """
-        user_id       AS UserId,
-        username      AS Username,
-        password_hash AS PasswordHash,
-        email         AS Email,
-        email_verified AS EmailVerified,
-        name          AS Name,
-        given_name    AS GivenName,
-        family_name   AS FamilyName,
-        is_active     AS IsActive,
-        created_at    AS CreatedAt,
-        updated_at    AS UpdatedAt
+        user_id            AS UserId,
+        resource_server_id AS ResourceServerId,
+        username           AS Username,
+        password_hash      AS PasswordHash,
+        email              AS Email,
+        email_verified     AS EmailVerified,
+        name               AS Name,
+        given_name         AS GivenName,
+        family_name        AS FamilyName,
+        is_active          AS IsActive,
+        created_at         AS CreatedAt,
+        updated_at         AS UpdatedAt
         """;
 
     public async Task<IReadOnlyList<User>> GetAllAsync()
@@ -26,6 +27,15 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<User>(
             $"SELECT {SelectColumns} FROM users ORDER BY username");
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<User>> GetByResourceServerAsync(string resourceServerId)
+    {
+        using var connection = dbFactory.OpenConnection();
+        var rows = await connection.QueryAsync<User>(
+            $"SELECT {SelectColumns} FROM users WHERE resource_server_id = @ResourceServerId ORDER BY username",
+            new { ResourceServerId = resourceServerId });
         return rows.ToList();
     }
 
@@ -60,15 +70,16 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             INSERT INTO users
-                (user_id, username, password_hash, email, email_verified, name, given_name, family_name,
+                (user_id, resource_server_id, username, password_hash, email, email_verified, name, given_name, family_name,
                  is_active, created_at, updated_at)
             VALUES
-                (@UserId, @Username, @PasswordHash, @Email, @EmailVerified, @Name, @GivenName, @FamilyName,
+                (@UserId, @ResourceServerId, @Username, @PasswordHash, @Email, @EmailVerified, @Name, @GivenName, @FamilyName,
                  @IsActive, @CreatedAt, @UpdatedAt)
             """,
             new
             {
                 user.UserId,
+                user.ResourceServerId,
                 user.Username,
                 user.PasswordHash,
                 user.Email,
@@ -93,7 +104,8 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""
             UPDATE users
-            SET username       = @Username,
+            SET resource_server_id = @ResourceServerId,
+                username       = @Username,
                 email          = @Email,
                 email_verified = @EmailVerified,
                 name           = @Name,
@@ -106,6 +118,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
             new
             {
                 user.UserId,
+                user.ResourceServerId,
                 user.Username,
                 user.Email,
                 EmailVerified = user.EmailVerified ? 1 : 0,

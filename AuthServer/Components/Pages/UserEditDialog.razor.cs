@@ -23,6 +23,9 @@ public partial class UserEditDialog
     public string UserId { get; set; } = string.Empty;
 
     [Parameter]
+    public string ResourceServerId { get; set; } = string.Empty;
+
+    [Parameter]
     public string InitialUsername { get; set; } = string.Empty;
 
     [Parameter]
@@ -87,6 +90,7 @@ public partial class UserEditDialog
         {
             var user = new User
             {
+                ResourceServerId = ResourceServerId,
                 Username = username.Trim(),
                 Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
                 Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
@@ -108,6 +112,7 @@ public partial class UserEditDialog
                 return;
             }
 
+            existing.ResourceServerId = ResourceServerId;
             existing.Username = username.Trim();
             existing.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
             existing.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();

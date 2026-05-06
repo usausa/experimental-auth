@@ -11,11 +11,16 @@ public partial class Users
     public UserService UserService { get; set; } = default!;
 
     [Inject]
+    public ResourceServerService ResourceServerService { get; set; } = default!;
+
+    [Inject]
     public IDialogService DialogService { get; set; } = default!;
 
     [Inject]
     public ISnackbar Snackbar { get; set; } = default!;
 
+    private List<ResourceServer> resourceServers = [];
+    private ResourceServer? selectedResourceServer;
     private List<User> users = [];
     private string searchText = string.Empty;
     private bool isLoading;
@@ -27,23 +32,50 @@ public partial class Users
             (u.Name?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
             (u.Email?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false));
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
-
-    private async Task LoadAsync()
+    protected override async Task OnInitializedAsync()
     {
+        resourceServers = [.. await ResourceServerService.GetActiveAsync()];
+        selectedResourceServer = resourceServers.FirstOrDefault();
+        await LoadUsersAsync();
+    }
+
+    private async Task OnResourceServerChangedAsync(ResourceServer? server)
+    {
+        selectedResourceServer = server;
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        if (selectedResourceServer is null)
+        {
+            users = [];
+            return;
+        }
+
         isLoading = true;
-        users = [.. await UserService.GetAllAsync()];
+        users = [.. await UserService.GetByResourceServerAsync(selectedResourceServer.ResourceServerId)];
         isLoading = false;
     }
 
     private async Task ShowAddDialogAsync()
     {
-        var parameters = new DialogParameters<UserEditDialog> { { x => x.IsNew, true } };
+        if (selectedResourceServer is null)
+        {
+            Snackbar.Add("Please select a resource server first.", Severity.Warning);
+            return;
+        }
+
+        var parameters = new DialogParameters<UserEditDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.ResourceServerId, selectedResourceServer.ResourceServerId }
+        };
         var dialog = await DialogService.ShowAsync<UserEditDialog>("Add User", parameters);
         var result = await dialog.Result;
         if (result is { Canceled: false })
         {
-            await LoadAsync();
+            await LoadUsersAsync();
         }
     }
 
@@ -53,6 +85,7 @@ public partial class Users
         {
             { x => x.IsNew, false },
             { x => x.UserId, user.UserId },
+            { x => x.ResourceServerId, user.ResourceServerId },
             { x => x.InitialUsername, user.Username },
             { x => x.InitialEmail, user.Email ?? string.Empty },
             { x => x.InitialName, user.Name ?? string.Empty },
@@ -65,7 +98,7 @@ public partial class Users
         var result = await dialog.Result;
         if (result is { Canceled: false })
         {
-            await LoadAsync();
+            await LoadUsersAsync();
         }
     }
 
@@ -94,6 +127,6 @@ public partial class Users
 
         await UserService.DeleteAsync(user.UserId);
         Snackbar.Add($"User '{user.Username}' deleted.", Severity.Success);
-        await LoadAsync();
+        await LoadUsersAsync();
     }
 }

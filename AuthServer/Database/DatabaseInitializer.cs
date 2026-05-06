@@ -21,6 +21,7 @@ public static class DatabaseInitializer
 
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
+            resource_server_id TEXT NOT NULL REFERENCES resource_servers(resource_server_id),
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             email TEXT,

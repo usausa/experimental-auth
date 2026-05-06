@@ -3,6 +3,7 @@ namespace AuthServer.Models;
 public sealed class User
 {
     public string UserId { get; set; } = default!;
+    public string ResourceServerId { get; set; } = default!;
     public string Username { get; set; } = default!;
     public string PasswordHash { get; set; } = default!;
     public string? Email { get; set; }

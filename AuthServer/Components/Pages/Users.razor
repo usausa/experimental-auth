@@ -1,9 +1,19 @@
 @page "/users"
 @rendermode InteractiveServer
+@using AuthServer.Models
 
 <PageTitle>Users - AuthServer</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+    <MudSelect T="ResourceServer" Label="Resource Server" Value="selectedResourceServer"
+               ValueChanged="OnResourceServerChangedAsync"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:320px"
+               ToStringFunc="@(rs => rs?.Name ?? string.Empty)">
+        @foreach (var rs in resourceServers)
+        {
+            <MudSelectItem T="ResourceServer" Value="rs">@rs.Name</MudSelectItem>
+        }
+    </MudSelect>
     <MudTextField @bind-Value="searchText" Placeholder="Search..." Immediate="true"
                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:280px"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" />
@@ -46,13 +56,15 @@
         <MudTd DataLabel="Created">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
         </MudTd>
-        <MudTd>
+        <MudTd Style="white-space:nowrap">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Warning" OnClick="() => ShowPasswordDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>
-        <MudText Class="pa-4 mud-text-secondary">No users found.</MudText>
+        <MudText Class="pa-4 mud-text-secondary">
+            @(selectedResourceServer is null ? "Select a resource server." : "No users found.")
+        </MudText>
     </NoRecordsContent>
 </MudTable>

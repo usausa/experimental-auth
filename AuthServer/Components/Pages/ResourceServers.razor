@@ -43,7 +43,7 @@
         <MudTd DataLabel="Created">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
         </MudTd>
-        <MudTd>
+        <MudTd Style="white-space:nowrap">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
         </MudTd>

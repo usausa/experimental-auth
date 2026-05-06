@@ -35,39 +35,183 @@ dotnet run -- <command> [options]
 | `introspect` | トークンイントロスペクションを実行する |
 | `revoke` | トークンを失効させる |
 
-### 基本的な使用フロー
+### ユースケース別使用例
+
+#### ユースケース 1: ユーザー認証（authorization_code + PKCE）
+
+ブラウザを介してユーザーがログインし、その認可を得てアクセストークンと ID Token を取得するフローです。（Phase 2 実装予定）
 
 ```bash
-# 1. サーバー情報を確認
-dotnet run -- discovery
+# 1. ブラウザ経由でユーザー認証・認可コード取得 → トークン交換（Phase 2）
+dotnet run -- token \
+  --auth http://localhost:5080 \
+  --grant authorization_code \
+  --client-id test-webapp \
+  --client-secret webapp-secret \
+  --scope "openid profile email api.read"
 
-# 2. アクセストークンを取得（client_credentials）
-dotnet run -- token
+# 2. 取得したアクセストークンで保護 API を呼び出す
+dotnet run -- api \
+  --resource http://localhost:5180 \
+  --path /api/protected
 
-# 3. 保護リソースへアクセス
-dotnet run -- api
+# 3. ID Token のユーザー情報を取得する（未実装: Phase 3）
+dotnet run -- userinfo \
+  --auth http://localhost:5080
+
+# 4. リフレッシュトークンでアクセストークンを更新する（未実装: Phase 2）
+dotnet run -- refresh \
+  --auth http://localhost:5080 \
+  --client-id test-webapp \
+  --client-secret webapp-secret
+
+# 5. 再更新後にもう一度 API を呼び出す
+dotnet run -- api \
+  --resource http://localhost:5180 \
+  --path /api/protected
 ```
 
-### token コマンドのオプション
+#### ユースケース 2: M2M 通信（client_credentials）
 
-| オプション | デフォルト値 | 説明 |
-|-----------|------------|------|
-| `--auth-server` | `http://localhost:5080` | AuthServer の URL |
-| `--grant-type` | `client_credentials` | グラントタイプ |
-| `--client-id` | `test-client` | クライアント ID |
-| `--client-secret` | `test-secret` | クライアントシークレット |
-| `--scope` | `api.read` | スコープ |
+サーバー間通信のように、ユーザーを介さずクライアントがアクセストークンを取得して保護 API を呼び出す最もシンプルなフローです。
 
-### api コマンドのオプション
+```bash
+# 1. Discovery ドキュメントでサーバー設定を確認（任意）
+dotnet run -- discovery --auth http://localhost:5080
 
-| オプション | デフォルト値 | 説明 |
-|-----------|------------|------|
-| `--resource-server` | `http://localhost:5180` | ResourceServer の URL |
-| `--endpoint` | `/api/protected` | 呼び出す API パス |
+# 2. client_credentials グラントでアクセストークンを取得
+dotnet run -- token \
+  --auth http://localhost:5080 \
+  --grant client_credentials \
+  --client-id test-client \
+  --client-secret test-secret \
+  --scope "api.read api.write"
+
+# 3. 取得したトークンで保護 API を呼び出す
+dotnet run -- api \
+  --resource http://localhost:5180 \
+  --path /api/protected \
+  --method GET
+
+# 4. トークンのメタ情報を確認する（未実装: Phase 4）
+dotnet run -- introspect \
+  --auth http://localhost:5080 \
+  --client-id test-client \
+  --client-secret test-secret
+
+# 5. 使い終わったらトークンを失効させる（未実装: Phase 4）
+dotnet run -- revoke \
+  --auth http://localhost:5080 \
+  --client-id test-client \
+  --client-secret test-secret
+```
+
+#### ユースケース 3: カスタム AuthServer / ResourceServer を指定する
+
+デフォルト以外のサーバーを使うときは各コマンドに `--auth` / `--resource` を指定します。
+
+```bash
+dotnet run -- token \
+  --auth http://myauthserver:8080 \
+  --client-id my-client \
+  --client-secret my-secret \
+  --scope "api.read"
+
+dotnet run -- api \
+  --resource http://myresourceserver:8180 \
+  --path /api/data
+```
+
+#### ユースケース 4: トークンファイルを明示的に指定する
+
+複数のテスト環境を並行して扱うときは `--token-file` で保存先を分けます。
+
+```bash
+# 環境 A のトークンを取得して保存
+dotnet run -- token \
+  --auth http://localhost:5080 \
+  --client-id test-client \
+  --client-secret test-secret \
+  --token-file /tmp/tokens-env-a.json
+
+# 環境 A のトークンで API を呼び出す
+dotnet run -- api \
+  --resource http://localhost:5180 \
+  --token-file /tmp/tokens-env-a.json
+```
+
+### 各コマンドのオプション一覧
+
+#### `token`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--grant` | `-g` | `client_credentials` | グラントタイプ (`client_credentials` \| `authorization_code`) |
+| `--client-id` | — | `test-client` | クライアント ID |
+| `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--scope` | `-s` | `api.read api.write` | スコープ（スペース区切り） |
+| `--username` | `-u` | — | ユーザー名（password グラント用） |
+| `--password` | `-p` | — | パスワード（password グラント用） |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
+
+#### `api`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--resource` | `-r` | `http://localhost:5180` | ResourceServer の URL |
+| `--path` | — | `/api/protected` | 呼び出す API パス |
+| `--method` | `-m` | `GET` | HTTP メソッド (`GET` \| `POST` \| `PUT` \| `DELETE`) |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン読み込み元パス |
+
+#### `refresh`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--client-id` | — | `test-client` | クライアント ID |
+| `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
+
+#### `introspect` / `revoke`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--client-id` | — | `test-client` | クライアント ID |
+| `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
+
+#### `userinfo` / `discovery`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 
 ### トークンの保存場所
 
 取得したトークンは `~/.testclient/tokens.json` に保存されます。各コマンドはこのファイルを参照してトークンを利用します。
+
+---
+
+## AuthServer エンドポイント一覧
+
+| エンドポイント | メソッド | 実装状況 | Phase | 概要 |
+|--------------|---------|---------|-------|------|
+| `/.well-known/openid-configuration` | GET | ✅ 実装済み | 1 | OIDC Discovery ドキュメントを返す |
+| `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
+| `/connect/token` | POST | ✅ 実装済み | 1 | アクセストークン・リフレッシュトークンを発行する（`client_credentials` グラント実装済み） |
+| `/connect/authorize` | GET | 🔲 未実装 | 2 | Authorization Code Flow の認可エンドポイント（PKCE 対応） |
+| `/connect/token` (authorization_code) | POST | 🔲 未実装 | 2 | 認可コードをアクセストークン・ID Token・リフレッシュトークンに交換する |
+| `/connect/token` (refresh_token) | POST | 🔲 未実装 | 2 | リフレッシュトークンで新しいアクセストークンを発行する |
+| `/account/login` | GET/POST | 🔲 未実装 | 2 | ユーザーログイン画面（Blazor） |
+| `/connect/userinfo` | GET | 🔲 未実装 | 3 | Bearer トークンを持つユーザーのクレームを返す（OIDC UserInfo エンドポイント） |
+| `/account/consent` | GET/POST | 🔲 未実装 | 3 | スコープ同意画面（Blazor） |
+| `/connect/revoke` | POST | 🔲 未実装 | 4 | アクセストークンまたはリフレッシュトークンを失効させる（RFC 7009） |
+| `/connect/introspect` | POST | 🔲 未実装 | 4 | トークンのアクティブ状態・メタ情報を返す（RFC 7662） |
+| `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout（セッション破棄・RP へのリダイレクト） |
+| `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント（RFC 8628） |
+| `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration（RFC 7591） |
 
 ---
 
@@ -90,7 +234,6 @@ dotnet run -- api
 | Authorization Endpoint | RFC 6749 §3.1 | 必須 | 🔲 未実装 | 2 |
 | Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | 🔲 未実装 | 2 |
 | PKCE | RFC 7636 | 現在必須 | 🔲 未実装 | 2 |
-| Login 画面 (Blazor) | — | — | 🔲 未実装 | 2 |
 | Refresh Token | RFC 6749 §6 | 標準 | 🔲 未実装 | 2 |
 | ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | 🔲 未実装 | 3 |
 | UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | 🔲 未実装 | 3 |
@@ -103,9 +246,6 @@ dotnet run -- api
 | Dynamic Client Registration | RFC 7591 / 7592 | SaaS 向け標準 | 🔲 未実装 | 5 |
 
 ### spec 範囲外の拡張機能（実装予定なし / 参考）
-
-`__spec.md` のスコープには含まれないが、他の実装で採用されている拡張機能です。  
-詳細は [`__Other/FEATURE_ANALYSIS.md`](__Other/FEATURE_ANALYSIS.md) および [`ENHANCEMENT_ROADMAP.md`](ENHANCEMENT_ROADMAP.md) を参照してください。
 
 | 機能 | 仕様 | 性格 |
 |------|------|------|
@@ -124,14 +264,3 @@ dotnet run -- api
 | LDAP 認証統合 | — | エンタープライズ統合 |
 | 外部 IdP 連携 (ソーシャルログイン) | — | フェデレーション |
 | 監査ログ | — | 運用・可観測性 |
-
----
-
-## 参考ドキュメント
-
-| ファイル | 内容 |
-|---------|------|
-| [`__spec.md`](__spec.md) | 実装仕様書（エンドポイント・ユースケース・フェーズ定義） |
-| [`TODO.md`](TODO.md) | フェーズ別実装チェックリスト |
-| [`__Other/FEATURE_ANALYSIS.md`](__Other/FEATURE_ANALYSIS.md) | 他実装との機能比較・差分分析 |
-| [`ENHANCEMENT_ROADMAP.md`](ENHANCEMENT_ROADMAP.md) | 機能強化の優先順位ロードマップ |

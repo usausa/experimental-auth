@@ -66,27 +66,7 @@ public static class DataSeeder
                 Now = now
             });
 
-        // Test user
-        connection.Execute("""
-            INSERT INTO users
-                (user_id, username, password_hash, email, email_verified, name,
-                 given_name, family_name, is_active, created_at, updated_at)
-            VALUES
-                (@UserId, @UserName, @PasswordHash, @Email, 1, @Name, @Given, @Family, 1, @Now, @Now)
-            """,
-            new
-            {
-                UserId = "user-001",
-                UserName = "alice",
-                PasswordHash = PasswordHasher.Hash("password"),
-                Email = "alice@example.com",
-                Name = "Alice Tester",
-                Given = "Alice",
-                Family = "Tester",
-                Now = now
-            });
-
-        // Default resource server
+        // Default resource server (must be inserted before users)
         connection.Execute("""
             INSERT INTO resource_servers
                 (resource_server_id, name, audience, description, is_active, created_at, updated_at)
@@ -99,6 +79,27 @@ public static class DataSeeder
                 Name = "ResourceServer",
                 Audience = "http://localhost:5180",
                 Description = "Default resource server",
+                Now = now
+            });
+
+        // Test user
+        connection.Execute("""
+            INSERT INTO users
+                (user_id, resource_server_id, username, password_hash, email, email_verified, name,
+                 given_name, family_name, is_active, created_at, updated_at)
+            VALUES
+                (@UserId, @ResourceServerId, @UserName, @PasswordHash, @Email, 1, @Name, @Given, @Family, 1, @Now, @Now)
+            """,
+            new
+            {
+                UserId = "user-001",
+                ResourceServerId = "resource-server-001",
+                UserName = "alice",
+                PasswordHash = PasswordHasher.Hash("password"),
+                Email = "alice@example.com",
+                Name = "Alice Tester",
+                Given = "Alice",
+                Family = "Tester",
                 Now = now
             });
     }
