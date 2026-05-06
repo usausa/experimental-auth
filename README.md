@@ -8,8 +8,8 @@ OAuth 2.0 / OpenID Connect 準拠の認証サーバーを .NET 10 でスクラ�
 
 | コンポーネント | 種別 | フレームワーク | デフォルト URL |
 |--------------|------|--------------|--------------|
-| **AuthServer** | Web API + Web UI | .NET 10 Minimal API + Blazor Server | `http://localhost:5051` |
-| **ResourceServer** | Web API | .NET 10 Minimal API | `http://localhost:5132` |
+| **AuthServer** | Web API + Web UI | .NET 10 Minimal API + Blazor Server | `http://localhost:5080` |
+| **ResourceServer** | Web API | .NET 10 Minimal API | `http://localhost:5180` |
 | **TestClient** | CLI ツール | .NET 10 Console | — |
 
 ---
@@ -52,7 +52,7 @@ dotnet run -- api
 
 | オプション | デフォルト値 | 説明 |
 |-----------|------------|------|
-| `--auth-server` | `http://localhost:5051` | AuthServer の URL |
+| `--auth-server` | `http://localhost:5080` | AuthServer の URL |
 | `--grant-type` | `client_credentials` | グラントタイプ |
 | `--client-id` | `test-client` | クライアント ID |
 | `--client-secret` | `test-secret` | クライアントシークレット |
@@ -62,7 +62,7 @@ dotnet run -- api
 
 | オプション | デフォルト値 | 説明 |
 |-----------|------------|------|
-| `--resource-server` | `http://localhost:5132` | ResourceServer の URL |
+| `--resource-server` | `http://localhost:5180` | ResourceServer の URL |
 | `--endpoint` | `/api/protected` | 呼び出す API パス |
 
 ### トークンの保存場所

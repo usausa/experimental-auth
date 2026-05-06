@@ -1,6 +1,7 @@
 namespace TestClient.Commands;
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 using Smart.CommandLine.Hosting;
 
@@ -18,7 +19,7 @@ public sealed class TokenCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     [Option<string>("--grant", "-g", Description = "Grant type (client_credentials | authorization_code | password)")]
     public string GrantType { get; set; } = "client_credentials";
@@ -44,7 +45,7 @@ public sealed class TokenCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var form = BuildForm();
         if (form is null)
         {
@@ -136,7 +137,7 @@ public sealed class ApiCommand : ICommandHandler
     }
 
     [Option<string>("--resource", "-r", Description = "ResourceServer base URL")]
-    public string ResourceServer { get; set; } = "http://localhost:5132";
+    public string ResourceServer { get; set; } = ServerUrls.ResourceServer;
 
     [Option<string>("--path", Description = "API path (default: /api/protected)")]
     public string Path { get; set; } = "/api/protected";
@@ -149,7 +150,7 @@ public sealed class ApiCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var resourceBase = string.IsNullOrEmpty(ResourceServer) ? "http://localhost:5132" : ResourceServer;
+        var resourceBase = string.IsNullOrEmpty(ResourceServer) ? ServerUrls.ResourceServer : ResourceServer;
         var apiPath = string.IsNullOrEmpty(Path) ? "/api/protected" : Path;
         var method = string.IsNullOrEmpty(Method) ? "GET" : Method;
 
@@ -204,7 +205,7 @@ public sealed class RefreshCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     [Option<string>("--client-id", Description = "Client ID")]
     public string ClientId { get; set; } = "test-client";
@@ -217,7 +218,7 @@ public sealed class RefreshCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
         var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
@@ -287,7 +288,7 @@ public sealed class IntrospectCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     [Option<string>("--client-id", Description = "Client ID")]
     public string ClientId { get; set; } = "test-client";
@@ -300,7 +301,7 @@ public sealed class IntrospectCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
         var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
@@ -350,7 +351,7 @@ public sealed class RevokeCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     [Option<string>("--client-id", Description = "Client ID")]
     public string ClientId { get; set; } = "test-client";
@@ -363,7 +364,7 @@ public sealed class RevokeCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
         var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
@@ -416,14 +417,14 @@ public sealed class UserInfoCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     [Option<string>("--token-file", "-f", Description = "Token file path")]
     public string? TokenFilePath { get; set; }
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.AccessToken is null)
@@ -460,6 +461,12 @@ public sealed class UserInfoCommand : ICommandHandler
 [Command("discovery", "Fetch and display the OpenID Connect discovery document")]
 public sealed class DiscoveryCommand : ICommandHandler
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     private readonly HttpClient http;
 
     public DiscoveryCommand(HttpClient http)
@@ -468,11 +475,11 @@ public sealed class DiscoveryCommand : ICommandHandler
     }
 
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
-    public string AuthServer { get; set; } = "http://localhost:5051";
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? "http://localhost:5051" : AuthServer;
+        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var url = $"{authBase.TrimEnd('/')}/.well-known/openid-configuration";
         Console.WriteLine($"Fetching discovery document from {url} ...");
 
@@ -488,6 +495,6 @@ public sealed class DiscoveryCommand : ICommandHandler
 
         // Pretty-print JSON
         using var doc = JsonDocument.Parse(body);
-        Console.WriteLine(JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(JsonSerializer.Serialize(doc.RootElement, JsonOptions));
     }
 }

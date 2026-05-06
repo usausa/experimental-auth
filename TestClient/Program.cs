@@ -24,4 +24,3 @@ builder.ConfigureCommands(commands =>
 
 var host = builder.Build();
 return await host.RunAsync();
-

@@ -1,7 +1,9 @@
 namespace AuthServer.Services;
 
 using System.Security.Claims;
+
 using AuthServer.Models;
+
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -10,10 +12,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 {
     private readonly AuthServerOptions options = options.Value;
 
-    /// <summary>クライアントクレデンシャル用のアクセストークンを発行する。</summary>
     public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, string? audience = null)
     {
-        var (key, kid) = keyService.GetActiveKey();
+        var (key, _) = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
         var expires = now.AddSeconds(options.AccessTokenLifetimeSeconds);
 
