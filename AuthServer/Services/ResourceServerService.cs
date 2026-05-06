@@ -17,7 +17,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
         updated_at         AS UpdatedAt
         """;
 
-    public async Task<IReadOnlyList<ResourceServer>> GetAllAsync()
+    public async Task<IReadOnlyList<ResourceServer>> QueryResourceServerListAsync()
     {
         await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<ResourceServer>(
@@ -25,7 +25,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
         return rows.ToList();
     }
 
-    public async Task<IReadOnlyList<ResourceServer>> GetActiveAsync()
+    public async Task<IReadOnlyList<ResourceServer>> QueryActiveResourceServerListAsync()
     {
         await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<ResourceServer>(
@@ -33,7 +33,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
         return rows.ToList();
     }
 
-    public async Task<ResourceServer?> FindByIdAsync(string id)
+    public async Task<ResourceServer?> QueryResourceServerAsync(string id)
     {
         await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<ResourceServer>(

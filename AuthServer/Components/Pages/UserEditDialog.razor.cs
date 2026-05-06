@@ -107,7 +107,7 @@ public partial class UserEditDialog
         }
         else
         {
-            var existing = await UserService.FindByIdAsync(UserId);
+            var existing = await UserService.QueryUserAsync(UserId);
             if (existing is null)
             {
                 Snackbar.Add("User not found.", Severity.Error);

@@ -6,7 +6,7 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
     <MudSelect T="ResourceServer" Label="Resource Server" Value="selectedResourceServer"
                ValueChanged="OnResourceServerChangedAsync"
-               Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:320px"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Class="users-resource-server-select"
                ToStringFunc="@(rs => rs?.Name ?? string.Empty)">
         @foreach (var rs in resourceServers)
         {
@@ -14,7 +14,7 @@
         }
     </MudSelect>
     <MudTextField @bind-Value="searchText" Placeholder="Search..." Immediate="true"
-                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:280px"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="users-search-field"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" />
     <MudSpacer />
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
@@ -23,13 +23,13 @@
 
 <MudTable Items="FilteredUsers" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="User">
     <HeaderContent>
-        <MudTh Style="width:36px"></MudTh>
+        <MudTh Class="col-icon"></MudTh>
         <MudTh>Username</MudTh>
         <MudTh>Name</MudTh>
         <MudTh>Email</MudTh>
-        <MudTh Style="width:80px">Active</MudTh>
-        <MudTh Style="width:180px">Created</MudTh>
-        <MudTh Style="width:100px"></MudTh>
+        <MudTh Class="col-active">Active</MudTh>
+        <MudTh Class="col-datetime">Created</MudTh>
+        <MudTh Class="col-actions"></MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd>
@@ -38,7 +38,7 @@
                      Size="Size.Small" />
         </MudTd>
         <MudTd DataLabel="Username">
-            <MudText Style="font-family:monospace">@context.Username</MudText>
+            <MudText Class="text-monospace">@context.Username</MudText>
         </MudTd>
         <MudTd DataLabel="Name">@(context.Name ?? "-")</MudTd>
         <MudTd DataLabel="Email">@(context.Email ?? "-")</MudTd>
@@ -55,7 +55,7 @@
         <MudTd DataLabel="Created">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
         </MudTd>
-        <MudTd Style="white-space:nowrap">
+        <MudTd Class="table-actions">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Warning" OnClick="() => ShowPasswordDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />

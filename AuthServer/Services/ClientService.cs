@@ -21,7 +21,7 @@ public sealed class ClientService(DbConnectionFactory dbFactory)
         updated_at             AS UpdatedAt
         """;
 
-    public async Task<Client?> FindByIdAsync(string clientId)
+    public async Task<Client?> QueryClientAsync(string clientId)
     {
         await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<Client>(

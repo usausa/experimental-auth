@@ -36,7 +36,7 @@ public partial class Users
 
     protected override async Task OnInitializedAsync()
     {
-        resourceServers = [.. await ResourceServerService.GetActiveAsync()];
+        resourceServers = [.. await ResourceServerService.QueryActiveResourceServerListAsync()];
         selectedResourceServer = resourceServers.FirstOrDefault();
         await LoadUsersAsync();
     }
@@ -56,7 +56,7 @@ public partial class Users
         }
 
         isLoading = true;
-        users = [.. await UserService.GetByResourceServerAsync(selectedResourceServer.ResourceServerId)];
+        users = [.. await UserService.QueryUserListByResourceServerAsync(selectedResourceServer.ResourceServerId)];
         isLoading = false;
     }
 

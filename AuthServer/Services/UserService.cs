@@ -24,7 +24,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         updated_at         AS UpdatedAt
         """;
 
-    public async Task<IReadOnlyList<User>> GetAllAsync()
+    public async Task<IReadOnlyList<User>> QueryUserListAsync()
     {
         await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<User>(
@@ -32,7 +32,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         return rows.ToList();
     }
 
-    public async Task<IReadOnlyList<User>> GetByResourceServerAsync(string resourceServerId)
+    public async Task<IReadOnlyList<User>> QueryUserListByResourceServerAsync(string resourceServerId)
     {
         await using var connection = dbFactory.OpenConnection();
         var rows = await connection.QueryAsync<User>(
@@ -41,7 +41,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         return rows.ToList();
     }
 
-    public async Task<User?> FindByIdAsync(string userId)
+    public async Task<User?> QueryUserAsync(string userId)
     {
         await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<User>(
@@ -49,7 +49,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
             new { UserId = userId });
     }
 
-    public async Task<User?> FindByUsernameAsync(string username)
+    public async Task<User?> QueryUserByUsernameAsync(string username)
     {
         await using var connection = dbFactory.OpenConnection();
         return await connection.QueryFirstOrDefaultAsync<User>(

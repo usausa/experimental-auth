@@ -26,7 +26,7 @@ public partial class ResourceServers
     private async Task LoadAsync()
     {
         isLoading = true;
-        resourceServers = [.. await ResourceServerService.GetAllAsync()];
+        resourceServers = [.. await ResourceServerService.QueryResourceServerListAsync()];
         isLoading = false;
     }
 

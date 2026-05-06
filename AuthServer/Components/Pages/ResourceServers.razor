@@ -11,13 +11,13 @@
 
 <MudTable Items="resourceServers" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.ResourceServer">
     <HeaderContent>
-        <MudTh Style="width:36px"></MudTh>
+        <MudTh Class="col-icon"></MudTh>
         <MudTh>Name</MudTh>
         <MudTh>Audience URL</MudTh>
         <MudTh>Description</MudTh>
-        <MudTh Style="width:80px">Active</MudTh>
-        <MudTh Style="width:180px">Created</MudTh>
-        <MudTh Style="width:80px"></MudTh>
+        <MudTh Class="col-active">Active</MudTh>
+        <MudTh Class="col-datetime">Created</MudTh>
+        <MudTh Class="col-actions"></MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd>
@@ -27,7 +27,7 @@
         </MudTd>
         <MudTd DataLabel="Name">@context.Name</MudTd>
         <MudTd DataLabel="Audience">
-            <MudText Style="font-family:monospace">@context.Audience</MudText>
+            <MudText Class="text-monospace">@context.Audience</MudText>
         </MudTd>
         <MudTd DataLabel="Description">@(context.Description ?? "-")</MudTd>
         <MudTd DataLabel="Active">
@@ -43,7 +43,7 @@
         <MudTd DataLabel="Created">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
         </MudTd>
-        <MudTd Style="white-space:nowrap">
+        <MudTd Class="table-actions">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
         </MudTd>

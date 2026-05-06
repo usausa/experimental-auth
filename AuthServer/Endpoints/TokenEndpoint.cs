@@ -38,7 +38,7 @@ public static class TokenEndpoint
             return Error("invalid_client", "client_id is required", StatusCodes.Status401Unauthorized);
         }
 
-        var client = await clientService.FindByIdAsync(clientId);
+        var client = await clientService.QueryClientAsync(clientId);
         if (client is null || !ClientService.ValidateSecret(client, clientSecret))
         {
             return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
@@ -49,7 +49,7 @@ public static class TokenEndpoint
         string? audience;
         if (!string.IsNullOrEmpty(resourceParam))
         {
-            var servers = await resourceServerService.GetActiveAsync();
+            var servers = await resourceServerService.QueryActiveResourceServerListAsync();
             var matched = servers.FirstOrDefault(s =>
                 string.Equals(s.Audience, resourceParam, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s.ResourceServerId, resourceParam, StringComparison.OrdinalIgnoreCase));
@@ -61,7 +61,7 @@ public static class TokenEndpoint
         }
         else
         {
-            var servers = await resourceServerService.GetActiveAsync();
+            var servers = await resourceServerService.QueryActiveResourceServerListAsync();
             audience = servers.Count > 0 ? servers[0].Audience : null;
         }
 
