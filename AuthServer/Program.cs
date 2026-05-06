@@ -3,6 +3,7 @@ using AuthServer.Database;
 using AuthServer.Endpoints;
 using AuthServer.Models;
 using AuthServer.Services;
+
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);

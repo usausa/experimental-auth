@@ -1,8 +1,10 @@
 namespace AuthServer.Services;
 
 using System.Globalization;
+
 using AuthServer.Database;
 using AuthServer.Models;
+
 using Dapper;
 
 public sealed class ClientService(DbConnectionFactory dbFactory)

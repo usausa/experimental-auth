@@ -2,7 +2,9 @@ namespace AuthServer.Components.Pages;
 
 using AuthServer.Models;
 using AuthServer.Services;
+
 using Microsoft.AspNetCore.Components;
+
 using MudBlazor;
 
 public partial class ResourceServerEditDialog
