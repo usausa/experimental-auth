@@ -10,7 +10,7 @@ using Dapper;
 
 using Microsoft.IdentityModel.Tokens;
 
-/// <summary>RSA 署名鍵を SQLite に永続化し、JWT 署名と JWKS 公開で利用する。</summary>
+// RSA 署名鍵を SQLite に永続化し、JWT 署名と JWKS 公開で利用する
 public sealed class SigningKeyService
 {
     private readonly DbConnectionFactory dbFactory;

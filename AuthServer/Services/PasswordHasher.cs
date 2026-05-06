@@ -2,10 +2,8 @@ namespace AuthServer.Services;
 
 using System.Security.Cryptography;
 
-/// <summary>
-/// PBKDF2-SHA256 ベースのパスワード/シークレットハッシュ。
-/// 形式: <c>{iterations}.{saltBase64}.{hashBase64}</c>
-/// </summary>
+// PBKDF2-SHA256 ベースのパスワード/シークレットハッシュ。
+// 形式: <c>{iterations}.{saltBase64}.{hashBase64}</c>
 public static class PasswordHasher
 {
     private const int SaltSize = 16;
