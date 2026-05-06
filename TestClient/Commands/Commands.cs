@@ -1,12 +1,12 @@
 namespace TestClient.Commands;
 
 using System.Text.Json;
+
 using Smart.CommandLine.Hosting;
 
 // ---------------------------------------------------------------------------
-// token  ─ 認証してトークンをファイルに保存
+// token
 // ---------------------------------------------------------------------------
-
 [Command("token", "Authenticate and save tokens to a file")]
 public sealed class TokenCommand : ICommandHandler
 {
@@ -110,17 +110,12 @@ public sealed class TokenCommand : ICommandHandler
                 ["client_secret"] = clientSecret,
                 ["scope"] = scope
             },
-
-            // Phase 2 以降で実装予定
-            "authorization_code" => UnsupportedGrant(grant),
-            "password" => UnsupportedGrant(grant),
-            "device_code" => UnsupportedGrant(grant),
-
+            // TODO : Implement authorization_code and password grants in Phase 2
             _ => UnsupportedGrant(grant)
         };
     }
 
-    private Dictionary<string, string>? UnsupportedGrant(string grant)
+    private static Dictionary<string, string>? UnsupportedGrant(string grant)
     {
         ConsoleHelper.WriteError($"Grant type '{grant}' is not yet implemented in this client.");
         return null;
@@ -128,9 +123,8 @@ public sealed class TokenCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// api  ─ 保存されたトークンを使って API を呼び出す
+// api
 // ---------------------------------------------------------------------------
-
 [Command("api", "Call a protected API endpoint using the saved token")]
 public sealed class ApiCommand : ICommandHandler
 {
@@ -197,9 +191,8 @@ public sealed class ApiCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// refresh  ─ リフレッシュトークンでアクセストークンを更新 (Phase 2 以降)
+// refresh
 // ---------------------------------------------------------------------------
-
 [Command("refresh", "Refresh the access token using the saved refresh token")]
 public sealed class RefreshCommand : ICommandHandler
 {
@@ -257,14 +250,14 @@ public sealed class RefreshCommand : ICommandHandler
             return;
         }
 
-        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
         store.AccessToken = root.GetProperty("access_token").GetString();
         store.TokenType = root.TryGetProperty("token_type", out var tt) ? tt.GetString() : store.TokenType;
         store.ExpiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : store.ExpiresIn;
         store.Scope = root.TryGetProperty("scope", out var sc) ? sc.GetString() : store.Scope;
-        // ローテーション対応: 新しい refresh_token が返ってきたら上書き
+        // Rotate refresh token if a new one is issued, otherwise keep the old one
         if (root.TryGetProperty("refresh_token", out var rt))
         {
             store.RefreshToken = rt.GetString();
@@ -281,9 +274,8 @@ public sealed class RefreshCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// introspect  ─ トークン情報を確認 (Phase 4 以降)
+// introspect
 // ---------------------------------------------------------------------------
-
 [Command("introspect", "Inspect a token via the introspection endpoint")]
 public sealed class IntrospectCommand : ICommandHandler
 {
@@ -345,9 +337,8 @@ public sealed class IntrospectCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// revoke  ─ トークンを失効させる (Phase 4 以降)
+// revoke
 // ---------------------------------------------------------------------------
-
 [Command("revoke", "Revoke the saved access token")]
 public sealed class RevokeCommand : ICommandHandler
 {
@@ -412,9 +403,8 @@ public sealed class RevokeCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// userinfo  ─ UserInfo エンドポイントを呼び出す (Phase 3 以降)
+// userinfo
 // ---------------------------------------------------------------------------
-
 [Command("userinfo", "Fetch user information from the UserInfo endpoint")]
 public sealed class UserInfoCommand : ICommandHandler
 {
@@ -465,9 +455,8 @@ public sealed class UserInfoCommand : ICommandHandler
 }
 
 // ---------------------------------------------------------------------------
-// discovery  ─ Discovery ドキュメントを取得して表示
+// discovery
 // ---------------------------------------------------------------------------
-
 [Command("discovery", "Fetch and display the OpenID Connect discovery document")]
 public sealed class DiscoveryCommand : ICommandHandler
 {
@@ -498,8 +487,7 @@ public sealed class DiscoveryCommand : ICommandHandler
         }
 
         // Pretty-print JSON
-        using var doc = System.Text.Json.JsonDocument.Parse(body);
-        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(
-            doc.RootElement, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        using var doc = JsonDocument.Parse(body);
+        Console.WriteLine(JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true }));
     }
 }

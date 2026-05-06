@@ -1,8 +1,5 @@
 namespace TestClient;
 
-/// <summary>
-/// ~/.testclient/tokens.json に保存されるトークン情報。
-/// </summary>
 public sealed class TokenStore
 {
     public string? AccessToken { get; set; }

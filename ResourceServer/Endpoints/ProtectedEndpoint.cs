@@ -10,7 +10,6 @@ public static class ProtectedEndpoint
 
         group.MapGet("/protected", HandleProtected)
             .RequireAuthorization("api.read");
-
         group.MapGet("/protected/admin", HandleAdmin)
             .RequireAuthorization("api.write");
     }
