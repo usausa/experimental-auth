@@ -19,7 +19,7 @@ public partial class ResourceServers
     private List<ResourceServer> resourceServers = [];
     private bool isLoading;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {
@@ -63,7 +63,8 @@ public partial class ResourceServers
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Delete Resource Server",
             $"Delete '{server.Name}'?",
-            yesText: "Delete", cancelText: "Cancel");
+            yesText: "Delete",
+            cancelText: "Cancel");
         if (confirmed is true)
         {
             await ResourceServerService.DeleteAsync(server.ResourceServerId);
