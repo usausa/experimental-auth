@@ -22,7 +22,12 @@ public static class ProtectedEndpoint
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .WithOpenApi(op => { op.Security ??= []; op.Security.Add(BearerRequirement); return op; });
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                op.Security ??= [];
+                op.Security.Add(BearerRequirement);
+                return Task.CompletedTask;
+            });
 
         group.MapGet("/protected/admin", HandleAdmin)
             .RequireAuthorization("api.write")
@@ -31,7 +36,12 @@ public static class ProtectedEndpoint
             .Produces<object>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .WithOpenApi(op => { op.Security ??= []; op.Security.Add(BearerRequirement); return op; });
+            .AddOpenApiOperationTransformer((op, _, _) =>
+            {
+                op.Security ??= [];
+                op.Security.Add(BearerRequirement);
+                return Task.CompletedTask;
+            });
     }
 
     private static IResult HandleProtected(ClaimsPrincipal user) =>

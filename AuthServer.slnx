@@ -12,7 +12,9 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="AppHost/AppHost.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567890" />
   <Project Path="AuthServer/AuthServer.csproj" Id="086490a3-6493-42ac-81c7-1c7a3dd4f049" />
   <Project Path="ResourceServer/ResourceServer.csproj" Id="7fa0b037-1d26-4192-ab83-c5bab31dd292" />
+  <Project Path="ServiceDefaults/ServiceDefaults.csproj" Id="b2c3d4e5-f6a7-8901-bcde-f12345678901" />
   <Project Path="TestClient/TestClient.csproj" Id="b77a8085-41f0-4e3b-838d-45f68432e939" />
 </Solution>

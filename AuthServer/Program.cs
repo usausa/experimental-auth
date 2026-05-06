@@ -10,7 +10,8 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.AddServiceDefaults();
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -70,5 +71,7 @@ app.MapRazorComponents<App>()
 app.MapDiscoveryEndpoint();
 app.MapJwksEndpoint();
 app.MapTokenEndpoint();
+
+app.MapDefaultEndpoints();
 
 app.Run();

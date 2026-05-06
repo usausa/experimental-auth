@@ -8,6 +8,8 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();
+
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((doc, _, _) =>
@@ -77,6 +79,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapProtectedEndpoints();
+
+app.MapDefaultEndpoints();
 
 app.Run();
 
