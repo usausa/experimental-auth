@@ -12,7 +12,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 {
     private readonly AuthServerOptions options = options.Value;
 
-    public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, string? audience = null)
+    public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, string audience)
     {
         var (key, _) = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
@@ -29,7 +29,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = options.Issuer,
-            Audience = audience ?? options.DefaultAudience,
+            Audience = audience,
             IssuedAt = now,
             NotBefore = now,
             Expires = expires,

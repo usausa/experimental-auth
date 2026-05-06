@@ -85,5 +85,21 @@ public static class DataSeeder
                 Family = "Tester",
                 Now = now
             });
+
+        // Default resource server
+        connection.Execute("""
+            INSERT INTO resource_servers
+                (resource_server_id, name, audience, description, is_active, created_at, updated_at)
+            VALUES
+                (@Id, @Name, @Audience, @Description, 1, @Now, @Now)
+            """,
+            new
+            {
+                Id = "resource-server-001",
+                Name = "ResourceServer",
+                Audience = "http://localhost:5180",
+                Description = "Default resource server",
+                Now = now
+            });
     }
 }

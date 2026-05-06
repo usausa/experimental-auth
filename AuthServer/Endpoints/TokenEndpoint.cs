@@ -15,7 +15,8 @@ public static class TokenEndpoint
     private static async ValueTask<IResult> HandleToken(
         HttpContext context,
         ClientService clientService,
-        TokenService tokenService)
+        TokenService tokenService,
+        ResourceServerService resourceServerService)
     {
         if (!context.Request.HasFormContentType)
         {
@@ -42,14 +43,40 @@ public static class TokenEndpoint
             return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 
+        // Resolve audience from `resource` parameter or fall back to first active resource server.
+        var resourceParam = form["resource"].ToString();
+        string? audience;
+        if (!string.IsNullOrEmpty(resourceParam))
+        {
+            var servers = await resourceServerService.GetActiveAsync();
+            var matched = servers.FirstOrDefault(s =>
+                string.Equals(s.Audience, resourceParam, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s.ResourceServerId, resourceParam, StringComparison.OrdinalIgnoreCase));
+            if (matched is null)
+            {
+                return Error("invalid_target", $"Resource '{resourceParam}' is not registered");
+            }
+            audience = matched.Audience;
+        }
+        else
+        {
+            var servers = await resourceServerService.GetActiveAsync();
+            audience = servers.Count > 0 ? servers[0].Audience : null;
+        }
+
+        if (audience is null)
+        {
+            return Error("server_error", "No active resource server is configured");
+        }
+
         return grantType switch
         {
-            "client_credentials" => HandleClientCredentials(client, form, tokenService),
+            "client_credentials" => HandleClientCredentials(client, form, tokenService, audience),
             _ => Error("unsupported_grant_type", $"grant_type '{grantType}' is not supported in Phase 1")
         };
     }
 
-    private static IResult HandleClientCredentials(Client client, IFormCollection form, TokenService tokenService)
+    private static IResult HandleClientCredentials(Client client, IFormCollection form, TokenService tokenService, string audience)
     {
         if (!client.GrantTypes.Contains("client_credentials", StringComparison.Ordinal))
         {
@@ -78,7 +105,7 @@ public static class TokenEndpoint
         }
 
         var scope = string.Join(' ', granted);
-        var result = tokenService.IssueClientCredentialsToken(client.ClientId, scope);
+        var result = tokenService.IssueClientCredentialsToken(client.ClientId, scope, audience);
 
         return Results.Json(new
         {

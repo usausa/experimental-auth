@@ -95,6 +95,16 @@ public static class DatabaseInitializer
             created_at TEXT NOT NULL,
             expires_at TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS resource_servers (
+            resource_server_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            audience TEXT NOT NULL UNIQUE,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """;
 
     public static void Initialize(DbConnectionFactory factory)

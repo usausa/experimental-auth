@@ -1,0 +1,54 @@
+@page "/resource-servers"
+@rendermode InteractiveServer
+
+<PageTitle>Resource Servers - AuthServer</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.AddCircle" OnClick="ShowAddDialogAsync">Add Resource Server</MudButton>
+</MudStack>
+
+<MudTable Items="resourceServers" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.ResourceServer">
+    <HeaderContent>
+        <MudTh Style="width:36px"></MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Audience URL</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh Style="width:80px">Active</MudTh>
+        <MudTh Style="width:180px">Created</MudTh>
+        <MudTh Style="width:80px"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <MudIcon Icon="@Icons.Material.Filled.Dns"
+                     Color="@(context.IsActive ? Color.Primary : Color.Default)"
+                     Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Audience">
+            <MudText Style="font-family:monospace">@context.Audience</MudText>
+        </MudTd>
+        <MudTd DataLabel="Description">@(context.Description ?? "-")</MudTd>
+        <MudTd DataLabel="Active">
+            @if (context.IsActive)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+            }
+        </MudTd>
+        <MudTd DataLabel="Created">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+        </MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4 mud-text-secondary">No resource servers found.</MudText>
+    </NoRecordsContent>
+</MudTable>

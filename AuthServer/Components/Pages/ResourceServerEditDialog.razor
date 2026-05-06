@@ -1,0 +1,17 @@
+@* Resource server add/edit dialog *@
+<MudDialog>
+    <TitleContent>@(IsNew ? "Add Resource Server" : "Edit Resource Server")</TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="name" Label="Name" Required="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="audience" Label="Audience URL" Required="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="description" Label="Description"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudCheckBox @bind-Value="isActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>

@@ -24,6 +24,7 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddSingleton<SigningKeyService>();
 builder.Services.AddSingleton<ClientService>();
+builder.Services.AddSingleton<ResourceServerService>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<UserService>();
 

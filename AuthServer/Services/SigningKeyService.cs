@@ -76,7 +76,7 @@ public sealed class SigningKeyService
             FROM signing_keys WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1
             """) ?? throw new InvalidOperationException("No active signing key.");
 
-        using var rsa = RSA.Create();
+        var rsa = RSA.Create();
         rsa.ImportFromPem(row.PrivateKeyPem);
         cachedKey = new RsaSecurityKey(rsa) { KeyId = row.Kid };
         cachedKid = row.Kid;
