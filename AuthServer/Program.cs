@@ -29,11 +29,24 @@ builder.Services.AddOpenApi(options =>
 builder.Services.Configure<AuthServerOptions>(builder.Configuration.GetSection("AuthServer"));
 
 var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "Data");
+
+// テストデータの投入は Seed:Enabled で制御する。未設定時は Development 環境のみ有効。
+// 既知の資格情報 (test-client / alice など) が本番環境で作られることを防ぐ。
+var seedEnabled = builder.Configuration.GetValue("Seed:Enabled", builder.Environment.IsDevelopment());
 builder.Services.AddSingleton(sp =>
 {
     var factory = new DbConnectionFactory(dataDirectory);
     DatabaseInitializer.Initialize(factory);
-    DataSeeder.Seed(factory, sp.GetRequiredService<ILoggerFactory>().CreateLogger("DataSeeder"));
+    var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("DataSeeder");
+    if (seedEnabled)
+    {
+        DataSeeder.Seed(factory, logger);
+    }
+    else
+    {
+        logger.LogInformation("Seed data is disabled (Seed:Enabled = false).");
+    }
+
     return factory;
 });
 

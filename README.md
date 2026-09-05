@@ -12,6 +12,13 @@ OAuth 2.0 / OpenID Connect 準拠の認証サーバーを .NET 10 でスクラ�
 | **ResourceServer** | Web API | .NET 10 Minimal API | `http://localhost:5180` |
 | **TestClient** | CLI ツール | .NET 10 Console | — |
 
+> **本番構成の注意**
+> 開発環境は HTTP で構成しているため、ResourceServer の `Jwt:RequireHttpsMetadata` を
+> `appsettings.Development.json` で `false` に下げています。既定値は `true` です。
+> 本番では Authority を HTTPS にし、この設定を上書きしないでください。
+> また AuthServer のテストデータ（`test-client` / `alice` など既知の資格情報）は
+> `Seed:Enabled` が `true` のときのみ投入されます（未設定時は Development 環境のみ）。
+
 ---
 
 ## TestClient の使い方
@@ -22,6 +29,9 @@ OAuth 2.0 / OpenID Connect 準拠の認証サーバーを .NET 10 でスクラ�
 cd TestClient
 dotnet run -- <command> [options]
 ```
+
+> Git Bash から実行する場合は `MSYS_NO_PATHCONV=1` を付けてください。
+> `--path /api/protected` のような引数が Windows パス（`C:/Program Files/Git/api/protected`）に変換されるためです。
 
 ### コマンド一覧
 
@@ -243,7 +253,7 @@ dotnet run -- api \
 | Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | 🟡 API 専用方式のみ | 2 |
 | PKCE (S256) | RFC 7636 | 現在必須 | ✅ 実装済み | 2 |
 | Refresh Token (ローテーションあり) | RFC 6749 §6 | 標準 | ✅ 実装済み | 2 |
-| ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | 🟡 `at_hash` / `auth_time` / `amr` 未実装 | 2 |
+| ID Token 生成 (`nonce` / `auth_time` / `at_hash` / `amr`) | OIDC Core 1.0 §2 | OIDC 必須 | ✅ 実装済み | 2〜3 |
 | UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | ✅ 実装済み | 2 |
 | 同意画面 / 同意情報管理 | OIDC Core 1.0 §3.1.2 | 標準 | 🔲 未実装 | 3 |
 | Token Revocation | RFC 7009 | 広く実装 | 🔲 未実装 | 4 |

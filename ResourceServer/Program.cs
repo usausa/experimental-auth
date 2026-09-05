@@ -34,7 +34,9 @@ builder.Services.AddOpenApi(options =>
 var jwt = builder.Configuration.GetSection("Jwt");
 var authority = jwt["Authority"] ?? throw new InvalidOperationException("Jwt:Authority is required");
 var audience = jwt["Audience"] ?? throw new InvalidOperationException("Jwt:Audience is required");
-var requireHttps = jwt.GetValue("RequireHttpsMetadata", false);
+
+// 既定は true (安全側)。開発環境は HTTP 構成のため appsettings.Development.json で false に下げている。
+var requireHttps = jwt.GetValue("RequireHttpsMetadata", true);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

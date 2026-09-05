@@ -84,7 +84,7 @@ public static class AuthorizeEndpoint
             return Error("invalid_client", "Unknown client", StatusCodes.Status401Unauthorized);
         }
 
-        if (!client.GrantTypes.Contains("authorization_code", StringComparison.Ordinal))
+        if (!client.AllowsGrantType("authorization_code"))
         {
             return Error("unauthorized_client", "Client is not allowed to use authorization_code grant");
         }

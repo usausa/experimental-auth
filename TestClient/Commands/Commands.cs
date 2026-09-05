@@ -150,6 +150,16 @@ public sealed class TokenCommand : ICommandHandler
         }
 
         using var authorizeDoc = JsonDocument.Parse(authorizeBody);
+
+        // state 検証: 送信した値と一致しない応答は、この要求に対するものではないとみなして中断する
+        var returnedState = authorizeDoc.RootElement.TryGetProperty("state", out var st) ? st.GetString() : null;
+        if (!String.Equals(returnedState, state, StringComparison.Ordinal))
+        {
+            ConsoleHelper.WriteError("state mismatch: the authorization response does not belong to this request.");
+            context.ExitCode = 1;
+            return;
+        }
+
         var code = authorizeDoc.RootElement.GetProperty("code").GetString();
         if (String.IsNullOrEmpty(code))
         {
@@ -212,6 +222,37 @@ public sealed class TokenCommand : ICommandHandler
         if (store.IdToken is not null)
         {
             ConsoleHelper.WriteInfo("id_token    ", ConsoleHelper.Truncate(store.IdToken, 60));
+            PrintIdTokenClaims(store.IdToken);
+        }
+    }
+
+    // ID Token のペイロード (第 2 セグメント) を base64url デコードしてクレームを表示する。署名検証は行わない。
+    private static void PrintIdTokenClaims(string idToken)
+    {
+        var parts = idToken.Split('.');
+        if (parts.Length != 3)
+        {
+            return;
+        }
+
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '=');
+
+        try
+        {
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(payload));
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                Console.WriteLine($"    {property.Name,-18}: {property.Value.GetRawText()}");
+            }
+        }
+        catch (FormatException)
+        {
+            ConsoleHelper.WriteError("id_token payload could not be decoded.");
+        }
+        catch (JsonException)
+        {
+            ConsoleHelper.WriteError("id_token payload is not valid JSON.");
         }
     }
 

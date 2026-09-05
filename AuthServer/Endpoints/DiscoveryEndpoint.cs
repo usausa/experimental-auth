@@ -38,7 +38,15 @@ public static class DiscoveryEndpoint
             token_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
             id_token_signing_alg_values_supported = new[] { "RS256" },
             scopes_supported = new[] { "openid", "profile", "email", "api.read", "api.write" },
-            code_challenge_methods_supported = new[] { "S256" }
+            code_challenge_methods_supported = new[] { "S256" },
+            subject_types_supported = new[] { "public" },
+            claims_supported = new[]
+            {
+                "sub", "iss", "aud", "exp", "iat", "nbf", "jti", "azp", "nonce", "auth_time", "amr", "at_hash",
+                "name", "given_name", "family_name", "preferred_username", "email", "email_verified"
+            },
+            // 省略時の既定値が true のため、未対応であることを明示する
+            request_uri_parameter_supported = false
         };
         return Results.Json(doc);
     }

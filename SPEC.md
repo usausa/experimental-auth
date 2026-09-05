@@ -117,8 +117,9 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | AppHost (Aspire ダッシュボード) | `http://localhost:15000` | オーケストレーション |
 | TestClient | — | コンソールアプリ |
 
-現状は開発利便性のため HTTP で構成しています。本番相当の設定では HTTPS とし、
-ResourceServer の `RequireHttpsMetadata` を `true` にする必要があります（`TODO.md` 参照）。
+現状は開発利便性のため HTTP で構成しています。ResourceServer の `RequireHttpsMetadata` は
+既定で `true` であり、`appsettings.Development.json` のみ `false` に下げています。
+本番相当の設定では Authority を HTTPS にし、この上書きを行わないでください。
 
 ---
 
@@ -267,7 +268,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
 |-------|------|------|
 | Phase 1 | ✅ 完了 | Discovery / JWKS / `client_credentials` / RS256 署名 / ResourceServer 連携 |
 | Phase 2 | 🟡 一部完了 | 認可コード + PKCE(S256) + リフレッシュトークン（ローテーション込み）を **方式 B（API 専用）** で実装済み。標準のブラウザリダイレクト方式（方式 A）と `/account/login` は未実装（§6.3 参照） |
-| Phase 3 | 🟡 一部完了 | ID Token（`nonce` まで）と UserInfo を先行実装済み。`at_hash` / `auth_time` / `amr`、同意画面、同意情報管理は未実装 |
+| Phase 3 | 🟡 一部完了 | ID Token（`nonce` / `auth_time` / `at_hash` / `amr`）と UserInfo、Discovery 拡張を実装済み。同意画面・同意情報管理は未実装（方式 A 前提） |
 | Phase 4 | 🔲 未着手 | 失効 / 検査 / ログアウト / 鍵ローテーション |
 | Phase 5 | 🔲 未着手 | デバイスフロー / 動的登録 / ユーザー向け Blazor 画面群 |
 
@@ -462,9 +463,9 @@ Phase 2 の実装に伴い、本フェーズの一部を先行実装済みです
 | consents テーブル・データアクセス | インフラ | 🔲 | 同意情報の保存・参照。テーブル定義のみ存在 |
 | E-05 `/connect/userinfo` | エンドポイント | ✅ | `sub`, `name`, `email`, `email_verified` 等返却 |
 | E-13 `/account/consent` (Blazor) | UI | 🔲 | スコープ同意画面。方式 B では成立しないため方式 A とセット |
-| UC-S13 ID Token 生成 | 内部処理 | 🟡 | `iss`, `sub`, `aud`, `exp`, `iat`, `nonce` は実装済み。`at_hash`, `auth_time`, `amr` が未実装 |
+| UC-S13 ID Token 生成 | 内部処理 | ✅ | `iss`, `sub`, `aud`, `exp`, `iat`, `nonce`, `auth_time`, `at_hash`, `amr` を実装 |
 | UC-S14 同意情報管理 | 内部処理 | 🔲 | ユーザー×クライアント×スコープの同意状態 DB 管理 |
-| Discovery メタデータ拡張 | エンドポイント | 🟡 | `userinfo_endpoint`, `scopes_supported` は追加済み。`claims_supported` 等が未反映（§9 参照） |
+| Discovery メタデータ拡張 | エンドポイント | 🟡 | `userinfo_endpoint`, `scopes_supported`, `claims_supported`, `subject_types_supported` を反映。`response_modes_supported` は方式 A 実装後（§9 参照） |
 
 **ID Token クレーム構成（目標形）:**
 
@@ -489,26 +490,31 @@ Phase 2 の実装に伴い、本フェーズの一部を先行実装済みです
   "iss": "http://localhost:5080",
   "aud": "test-webapp",
   "sub": "user-001",
-  "exp": 1788574854,
-  "iat": 1788571254,
-  "nbf": 1788571254,
-  "jti": "6e91f5d384194572ba78d83f45eee233",
+  "exp": 1788591415,
+  "iat": 1788587815,
+  "nbf": 1788587815,
+  "auth_time": 1788587815,
+  "jti": "0616a0146d1c4ec9b9c2e1368a0ad442",
   "azp": "test-webapp",
   "nonce": "n-0S6_WzA2Mj",
+  "amr": ["pwd"],
+  "at_hash": "_Nn9OuewiQxGLPTojmiiDg",
   "name": "Alice Tester",
   "given_name": "Alice",
   "family_name": "Tester",
   "preferred_username": "alice",
   "email": "alice@example.com",
-  "email_verified": "true"
+  "email_verified": true
 }
 ```
 
-現在の実装との差分:
+目標形との対応:
 
-- `at_hash` / `auth_time` / `amr` が未実装
-- `email_verified` が boolean ではなく文字列 `"true"` で出力される（OIDC Core §5.1 では boolean 指定。UserInfo 側は boolean で返しており不整合）
-- 有効期限がアクセストークンと同じ `AccessTokenLifetimeSeconds` を流用している
+- `auth_time` は認可コードの `created_at`（方式 B では資格情報検証の直後に発行するため認証時刻と一致）
+- `at_hash` はアクセストークンの SHA-256 左 128bit を base64url 化（RS256 のため）
+- `amr` は方式 B がパスワード認証のみのため `["pwd"]` 固定
+- 有効期限は `AuthServer:IdTokenLifetimeSeconds`（既定 3600 秒）で個別に設定可能
+- 数値・真偽値・配列のクレームは `SecurityTokenDescriptor.Claims` 経由で型を保って出力（`ClaimsIdentity` 経由では文字列化される）
 
 **Phase 3 完了時の追加フロー:**
 
@@ -767,9 +773,9 @@ https://client.example.com/callback
 
 | # | 対策 | 対象 | 実装 | 詳細 |
 |---|------|------|------|------|
-| SEC-01 | HTTPS 必須 | 全通信 | 🔲 | 開発環境でも自己署名証明書で TLS を使用。現在は HTTP 構成（§2.5） |
+| SEC-01 | HTTPS 必須 | 全通信 | 🔲 | 開発環境でも自己署名証明書で TLS を使用。現在は HTTP 構成（§2.5）。ResourceServer の `RequireHttpsMetadata` は既定 `true`（Development のみ `false`） |
 | SEC-02 | PKCE 必須 | Authorization Code Flow | ✅ | S256 のみ許可。`code_challenge` 省略時はエラー |
-| SEC-03 | state パラメータ検証 | Authorization Endpoint | 🔲 | CSRF 防止。現在は受け取って返すのみで検証していない |
+| SEC-03 | state パラメータ検証 | Authorization Endpoint | ✅ | CSRF 防止。サーバーは `state` を認可コードと共に保存し応答で返却、TestClient が送信値との一致を検証（RFC 6749 §10.12 の役割分担どおり） |
 | SEC-04 | 認可コード一回限り使用 | Token Endpoint | 🟡 | 消費時に DELETE してリプレイを防止。ただし**再使用時に関連トークンを失効させる処理は未実装** |
 | SEC-05 | redirect_uri 完全一致検証 | Authorization Endpoint | ✅ | 登録済み URI との完全一致。トークン交換時にも再照合 |
 | SEC-06 | パスワードハッシュ化 | ユーザー管理 | ✅ | PBKDF2-SHA256 / 60 万回反復 + `FixedTimeEquals` |
@@ -836,14 +842,21 @@ https://client.example.com/callback
   "scopes_supported": [
     "openid", "profile", "email", "api.read", "api.write"
   ],
-  "code_challenge_methods_supported": ["S256"]
+  "code_challenge_methods_supported": ["S256"],
+  "subject_types_supported": ["public"],
+  "claims_supported": [
+    "sub", "iss", "aud", "exp", "iat", "nbf", "jti", "azp", "nonce", "auth_time", "amr", "at_hash",
+    "name", "given_name", "family_name", "preferred_username", "email", "email_verified"
+  ],
+  "request_uri_parameter_supported": false
 }
 ```
 
 未反映の項目: `revocation_endpoint`, `introspection_endpoint`, `device_authorization_endpoint`,
-`end_session_endpoint`, `registration_endpoint`, `response_modes_supported`,
-`subject_types_supported`, `claims_supported`, `offline_access` スコープ、
+`end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ、
 および失効・検査エンドポイントの認証方式。いずれも対応エンドポイントが未実装のためです。
+`response_modes_supported` は方式 B（JSON 応答）に該当する標準値がないため、方式 A 実装時に追加します。
+`request_uri_parameter_supported` は省略時の既定値が `true` のため、未対応を明示するために `false` を出力しています。
 
 なお `authorization_endpoint` は POST 専用（§6.3 方式 B）であり、
 標準の Authorization Code Flow を期待するクライアントとは互換性がありません。
@@ -1032,8 +1045,8 @@ CREATE TABLE resource_servers (
 
 ### 10.2 初期データ
 
-`AuthServer/Database/DataSeeder.cs` が投入する内容です。`clients` テーブルが空のときのみ実行されます
-（環境による分岐がない点は `TODO.md` の未対応項目）。
+`AuthServer/Database/DataSeeder.cs` が投入する内容です。`Seed:Enabled` が `true` のとき
+（未設定時は Development 環境のみ）、かつ `clients` テーブルが空のときのみ実行されます。
 
 | 種別 | ID | シークレット / パスワード | 備考 |
 |------|----|--------------------------|------|

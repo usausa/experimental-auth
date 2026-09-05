@@ -6,5 +6,7 @@ public sealed class AuthServerOptions
 
     public int AccessTokenLifetimeSeconds { get; set; } = 3600;
 
+    public int IdTokenLifetimeSeconds { get; set; } = 3600;
+
     public int RefreshTokenLifetimeSeconds { get; set; } = 86400;
 }

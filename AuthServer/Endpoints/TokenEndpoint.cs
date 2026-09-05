@@ -75,7 +75,7 @@ public static class TokenEndpoint
 
     private static async ValueTask<IResult> HandleClientCredentials(Client client, IFormCollection form, TokenService tokenService, ResourceServerService resourceServerService)
     {
-        if (!client.GrantTypes.Contains("client_credentials", StringComparison.Ordinal))
+        if (!client.AllowsGrantType("client_credentials"))
         {
             return Error("unauthorized_client", "Client is not allowed to use client_credentials grant");
         }
@@ -128,7 +128,7 @@ public static class TokenEndpoint
         UserService userService,
         ResourceServerService resourceServerService)
     {
-        if (!client.GrantTypes.Contains("authorization_code", StringComparison.Ordinal))
+        if (!client.AllowsGrantType("authorization_code"))
         {
             return Error("unauthorized_client", "Client is not allowed to use authorization_code grant");
         }
@@ -198,12 +198,12 @@ public static class TokenEndpoint
         string? idToken = null;
         if (includesOpenId)
         {
-            idToken = tokenService.IssueIdToken(client.ClientId, user.UserId, user, info.Nonce, scopes);
+            idToken = tokenService.IssueIdToken(client.ClientId, user.UserId, user, info.Nonce, scopes, info.AuthTime, accessTokenResult.AccessToken);
         }
 
         // refresh_token グラントが許可されていれば発行
         string? refreshToken = null;
-        if (client.GrantTypes.Contains("refresh_token", StringComparison.Ordinal))
+        if (client.AllowsGrantType("refresh_token"))
         {
             refreshToken = await refreshTokenService.IssueAsync(client.ClientId, user.UserId, info.Scopes);
         }
@@ -227,7 +227,7 @@ public static class TokenEndpoint
         UserService userService,
         ResourceServerService resourceServerService)
     {
-        if (!client.GrantTypes.Contains("refresh_token", StringComparison.Ordinal))
+        if (!client.AllowsGrantType("refresh_token"))
         {
             return Error("unauthorized_client", "Client is not allowed to use refresh_token grant");
         }

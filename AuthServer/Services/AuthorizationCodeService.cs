@@ -65,7 +65,7 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
 
         var row = await connection.QueryFirstOrDefaultAsync<dynamic>("""
             SELECT client_id, user_id, redirect_uri, scopes,
-                   code_challenge, code_challenge_method, nonce, expires_at
+                   code_challenge, code_challenge_method, nonce, expires_at, created_at
             FROM authorization_codes WHERE code_hash = @Hash
             """, new { Hash = hash });
 
@@ -90,7 +90,8 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
             (string)row.scopes,
             row.code_challenge is DBNull ? null : (string?)row.code_challenge,
             row.code_challenge_method is DBNull ? null : (string?)row.code_challenge_method,
-            row.nonce is DBNull ? null : (string?)row.nonce);
+            row.nonce is DBNull ? null : (string?)row.nonce,
+            DateTime.Parse((string)row.created_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
     }
 
     // PKCE code_verifier を検証する(S256)。
@@ -135,6 +136,8 @@ public sealed record AuthorizationCodeInfo(
     string Scopes,
     string? CodeChallenge,
     string? CodeChallengeMethod,
-    string? Nonce);
+    string? Nonce,
+    // ユーザー認証時刻。方式 B では資格情報の検証直後にコードを発行するため created_at と一致する (ID Token の auth_time)
+    DateTime AuthTime);
 #pragma warning restore CA1056
 #pragma warning restore CA1054

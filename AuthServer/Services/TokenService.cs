@@ -1,6 +1,8 @@
 namespace AuthServer.Services;
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 using AuthServer.Models;
 
@@ -10,6 +12,9 @@ using Microsoft.IdentityModel.Tokens;
 
 public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServerOptions> options)
 {
+    // amr (Authentication Methods References)。方式 B はパスワード認証のみ
+    private static readonly string[] PasswordAmr = ["pwd"];
+
     private readonly AuthServerOptions options = options.Value;
 
     public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, string audience)
@@ -77,7 +82,8 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
     }
 
     // OpenID Connect の ID Token を発行する。
-    public string IssueIdToken(string clientId, string userId, User user, string? nonce, string[] grantedScopes)
+    // authTime はユーザー認証時刻 (auth_time)、accessToken を渡すと at_hash (OIDC Core §3.1.3.6) を付与する。
+    public string IssueIdToken(string clientId, string userId, User user, string? nonce, string[] grantedScopes, DateTime authTime, string? accessToken)
     {
         var (key, _) = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
@@ -88,6 +94,19 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             new("azp", clientId)
         };
+
+        // 数値・真偽値・配列のクレームは ClaimsIdentity 経由だと文字列化されるため、
+        // Claims ディクショナリで型を保ったまま JSON に出力する。
+        var typedClaims = new Dictionary<string, object>
+        {
+            ["auth_time"] = new DateTimeOffset(authTime.ToUniversalTime()).ToUnixTimeSeconds(),
+            ["amr"] = PasswordAmr
+        };
+
+        if (accessToken is not null)
+        {
+            typedClaims["at_hash"] = ComputeAtHash(accessToken);
+        }
 
         if (nonce is not null)
         {
@@ -119,7 +138,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             {
                 claims.Add(new Claim("email", user.Email));
             }
-            claims.Add(new Claim("email_verified", user.EmailVerified ? "true" : "false"));
+            typedClaims["email_verified"] = user.EmailVerified;
         }
 
         var descriptor = new SecurityTokenDescriptor
@@ -128,8 +147,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             Audience = clientId,
             IssuedAt = now,
             NotBefore = now,
-            Expires = now.AddSeconds(options.AccessTokenLifetimeSeconds),
+            Expires = now.AddSeconds(options.IdTokenLifetimeSeconds),
             Subject = new ClaimsIdentity(claims),
+            Claims = typedClaims,
             // kid は SigningCredentials の RsaSecurityKey.KeyId から自動的にヘッダーへ付与される。
             // AdditionalHeaderClaims で kid を渡すと IDX14116 で発行に失敗するため指定しない。
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256)
@@ -137,6 +157,14 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         return handler.CreateToken(descriptor);
+    }
+
+    // at_hash: アクセストークンの ASCII 表現を alg 対応のハッシュ (RS256 → SHA-256) にかけ、
+    // 左半分 (128bit) を base64url 化した値 (OIDC Core §3.1.3.6)。
+    private static string ComputeAtHash(string accessToken)
+    {
+        var hash = SHA256.HashData(Encoding.ASCII.GetBytes(accessToken));
+        return Base64UrlEncoder.Encode(hash, 0, hash.Length / 2);
     }
 }
 
