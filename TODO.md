@@ -7,6 +7,22 @@
 
 ---
 
+## マイルストーン計画
+
+2026-09-05 に決定した進め方です。ブラウザリダイレクト（方式 A）は API-only の作業を終えてから着手します。
+
+| M | 内容 | 状態 |
+|---|------|------|
+| M1 | トークンライフサイクル（Phase 4 前半）: `/connect/revoke`・`/connect/introspect`・JTI 失効リスト・SEC-04 ファミリー失効・スキーママイグレーション機構・鍵ローテーション・クリーンアップジョブ・TestClient `revoke` / `introspect` | ✅ 完了（2026-09-05） |
+| M2 | API-only 候補の一部（Phase B から選択）: Device Authorization Grant、Resource Indicators + ES256、DPoP、Dynamic Client Registration、監査ログ / レート制限、鍵の事前公開（2 段階ローテーション） | 🔲 次 |
+| M3 | ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 M2 の後 |
+
+**アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
+失効はリフレッシュトークンに対して確実に効かせ、アクセストークンは短寿命で対処する。
+AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効リストを照合する（`SPEC.md` §6.5）。
+
+---
+
 ## コードレビュー指摘（2026-08-06）
 
 5 件すべて 2026-09-05 に対応済みです。
@@ -28,9 +44,8 @@
       同意画面・`prompt` パラメーター・外部 IdP 連携が成立しません
 - [ ] トークン有効期限が当初仕様と異なる（`SPEC.md` SEC-07）。
       リフレッシュトークンは仕様 30 日に対し実装 1 日（86400 秒）、
-      認可コードは仕様 10 分に対し実装 2 分（120 秒）。仕様と実装のどちらに寄せるか要判断
-- [ ] 認可コード再使用時に、そのコードから発行済みのトークンを失効させる処理が未実装
-      （`SPEC.md` SEC-04）。現在は DELETE によるワンタイム化のみ
+      認可コードは仕様 10 分に対し実装 2 分（120 秒）。仕様と実装のどちらに寄せるか要判断。
+      方式 3 ではアクセストークンの有効期限（現在 3600 秒）が失効の反映遅延そのものになるため、短縮も含めて判断する
 - [ ] HTTPS 構成が未対応（`SPEC.md` SEC-01）。現在は AuthServer / ResourceServer とも HTTP。
       ResourceServer の `RequireHttpsMetadata` は既定 `true` に変更済み（Development のみ `false`）
 - [ ] レート制限が未実装（`SPEC.md` SEC-09）。Token / Authorize エンドポイントのブルートフォース対策
@@ -118,22 +133,30 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 
 ## Phase 4: 運用機能
 
-- [ ] Dapper による失効トークンデータアクセス実装
-- [ ] `/connect/revoke` 実装
-- [ ] 失効リスト管理（JTI ベース、DB 永続化）
-- [ ] `/connect/introspect` 実装
-- [ ] `/connect/logout` 実装
-- [ ] セッション管理（Cookie ベース）
-- [ ] Blazor ログアウト確認画面
-- [ ] 鍵ローテーション機能（新鍵生成・旧鍵猶予期間・DB 管理）
-- [ ] JWKS キャッシュ制御ヘッダー（`Cache-Control`）
-- [ ] 期限切れ認可コード・リフレッシュトークンのクリーンアップジョブ
-- [ ] 期限切れ失効トークンのクリーンアップジョブ
-- [ ] TestClient: トークン失効実装
-- [ ] TestClient: ログアウト実装
-- [ ] 結合テスト: トークン失効後の API 呼び出し拒否確認
-- [ ] 結合テスト: イントロスペクション応答確認
-- [ ] 結合テスト: 鍵ローテーション後のトークン検証確認
+前半（トークンライフサイクル）は M1 で実装済み。ログアウト・セッション関連は方式 A（M3）が前提です。
+2026-09-05 に AuthServer / ResourceServer を実起動して全項目を実機検証しました。
+
+- [x] Dapper による失効トークンデータアクセス実装 (`Services/RevokedTokenService.cs`)
+- [x] スキーママイグレーション機構（`schema_migrations`、v1 `consumed_at` / v2 `source_code_hash`）
+- [x] `/connect/revoke` 実装 (`Endpoints/RevocationEndpoint.cs`)
+- [x] 失効リスト管理（JTI ベース、DB 永続化）
+- [x] `/connect/introspect` 実装 (`Endpoints/IntrospectionEndpoint.cs`)
+- [x] 認可コード再使用時のファミリー失効（SEC-04）と、ローテーション後の RT リプレイ検知
+- [x] クライアント認証の共通化 (`Endpoints/ClientAuthentication.cs`) と AT 検証の共通化 (`TokenService.ValidateAccessTokenAsync`、`typ=at+jwt` 必須)
+- [x] 鍵ローテーション機能（新鍵生成・旧鍵猶予期間・DB 管理。管理画面 `/signing-keys` と `SigningKeyRotationDays` による自動）
+- [x] JWKS キャッシュ制御ヘッダー（`Cache-Control`、`JwksCacheMaxAgeSeconds`）
+- [x] 期限切れ認可コード・リフレッシュトークンのクリーンアップジョブ (`Services/MaintenanceService.cs`)
+- [x] 期限切れ失効トークンのクリーンアップジョブ（猶予期間切れの鍵の退役も同じジョブ）
+- [x] TestClient: トークン失効実装（`revoke --token-type all|access|refresh`）
+- [x] TestClient: イントロスペクション実装（`introspect --token-type access|refresh`）
+- [x] 結合テスト: 失効後は AuthServer（UserInfo / Introspection）が拒否し、ResourceServer は有効期限まで受理する（方式 3 の想定どおり）
+- [x] 結合テスト: イントロスペクション応答確認（AT / RT / 失効済み / 不正 / ID Token は inactive）
+- [x] 結合テスト: 鍵ローテーション後のトークン検証確認（旧鍵のトークンは猶予期間中受理。新鍵のトークンは JwtBearer の既定動作で最初の 1 要求のみ 401、JWKS 再取得後は受理）
+- [ ] 鍵の事前公開（2 段階ローテーション: 新鍵を JWKS に先行公開し、`JwksCacheMaxAgeSeconds` 経過後に署名を切り替えて直後の 401 をなくす） ※M2 候補
+- [ ] `/connect/logout` 実装 ※M3（方式 A）
+- [ ] セッション管理（Cookie ベース） ※M3
+- [ ] Blazor ログアウト確認画面 ※M3
+- [ ] TestClient: ログアウト実装 ※M3
 
 ## Phase 5: 拡張機能
 
@@ -157,7 +180,7 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 ## Phase B: spec 範囲外の機能強化候補
 
 `__Other/FEATURE_ANALYSIS.md` の調査結果をもとにした、`SPEC.md` に含まれない機能の候補です。
-Phase 1〜5（spec 範囲）の完成後に着手する前提で、以下の 3 軸で優先度を付けています。
+M2 ではこの中から一部を選んで実装します（方式 A が前提のものは M3 以降）。優先度は以下の 3 軸で付けています。
 
 | 軸 | 内容 |
 |----|------|
@@ -210,12 +233,10 @@ Phase 1〜5（spec 範囲）の完成後に着手する前提で、以下の 3 �
 | Authlete SaaS 型 | 外部委譲はフルスクラッチ学習の趣旨に反する |
 | 複数 DB バックエンド | SQLite で十分。運用課題 |
 
-### 推奨着手順
+### 着手順
 
-1. **方式 A（標準リダイレクトフロー）** — 「仕様と実装の乖離」参照。B-1 の `prompt`、同意画面、B-2 の外部 IdP はこれなしに始められない
-2. **`state` 厳密検証**（Phase 2）と **ID Token の `at_hash` / `auth_time` / `amr`**（Phase 3）— 方式 A と同時に入れられる
-3. **B-1 JWT Replay 検出** — Phase 4 の失効リストと組み合わせて低コスト
-4. 以降は B-1 → B-2 → B-3 の順
+冒頭の「マイルストーン計画」を参照してください。M2 の候補は上記 B-1〜B-3 のうち方式 A を前提としないもの
+（Device Authorization Grant は Phase 5、Resource Indicators / ES256 / DPoP / DCR / 監査ログ / レート制限）から選びます。
 
 ---
 

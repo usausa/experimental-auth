@@ -83,6 +83,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | 失効トークン | `revoked_tokens` | jti, revoked_at, expires_at |
 | 署名鍵 | `signing_keys` | kid, algorithm, private_key_pem, public_key_pem, created_at, is_active |
 | リソースサーバー | `resource_servers` | resource_server_id, name, audience, description, is_active |
+| マイグレーション | `schema_migrations` | version, applied_at |
 
 ### 2.4 アーキテクチャ図
 
@@ -167,8 +168,8 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行 |
 | E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。**API 専用方式のみ実装**（§6.3 参照）。標準のブラウザリダイレクト方式 (GET) は未実装 |
 | E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。POST 版は未実装 |
-| E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | 🔲 | トークン失効 |
-| E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | 🔲 | トークン検査 |
+| E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
+| E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
 | E-08 | セッション | End Session (Logout) | `/connect/logout` | GET | 任意 | OIDC RP-Logout §2 | 4 | 🔲 | ログアウト |
 | E-09 | デバイス | Device Authorization | `/connect/device/authorize` | POST | 任意 | RFC 8628 §3.1 | 5 | 🔲 | デバイスコード発行 |
 | E-10 | クライアント管理 | Dynamic Registration | `/connect/register` | POST | 任意 | RFC 7591 | 5 | 🔲 | クライアント登録 |
@@ -259,7 +260,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
  最小動作    認可コード    OIDC準拠     運用機能      拡張機能
-   ✅         🟡           🟡           🔲           🔲
+   ✅         🟡           🟡           🟡           🔲
 ```
 
 **現在の実装状況:**
@@ -269,7 +270,7 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
 | Phase 1 | ✅ 完了 | Discovery / JWKS / `client_credentials` / RS256 署名 / ResourceServer 連携 |
 | Phase 2 | 🟡 一部完了 | 認可コード + PKCE(S256) + リフレッシュトークン（ローテーション込み）を **方式 B（API 専用）** で実装済み。標準のブラウザリダイレクト方式（方式 A）と `/account/login` は未実装（§6.3 参照） |
 | Phase 3 | 🟡 一部完了 | ID Token（`nonce` / `auth_time` / `at_hash` / `amr`）と UserInfo、Discovery 拡張を実装済み。同意画面・同意情報管理は未実装（方式 A 前提） |
-| Phase 4 | 🔲 未着手 | 失効 / 検査 / ログアウト / 鍵ローテーション |
+| Phase 4 | 🟡 一部完了 | 失効 / 検査 / 鍵ローテーション / クリーンアップ / マイグレーション機構を実装済み（M1）。ログアウト・セッションは方式 A 前提で未実装（M3） |
 | Phase 5 | 🔲 未着手 | デバイスフロー / 動的登録 / ユーザー向け Blazor 画面群 |
 
 進捗の詳細と残タスクは `TODO.md` を参照してください（§13）。
@@ -565,73 +566,108 @@ User/Browser                          AuthServer
 
 **目標**: トークンの失効・検査・ログアウト・鍵ローテーションなど、本番運用に必要な機能を実装する。
 
-| 実装対象 | 種別 | 詳細 |
-|---------|------|------|
-| revoked_tokens テーブル・データアクセス | インフラ | 失効トークンの保存・検索 |
-| signing_keys テーブル拡張 | インフラ | 複数鍵の管理、アクティブフラグ |
-| E-06 `/connect/revoke` | エンドポイント | `token` + `token_type_hint` でトークン失効 |
-| E-07 `/connect/introspect` | エンドポイント | `active`, `sub`, `scope`, `exp`, `client_id` 等返却 |
-| E-08 `/connect/logout` | エンドポイント | `id_token_hint`, `post_logout_redirect_uri`, `state` 処理 |
-| UC-S15 トークン失効処理 | 内部処理 | 失効リスト（JTI ベース）DB 管理 |
-| UC-S16 トークン失効チェック | 内部処理 | JWT 検証時に失効リスト照合 |
-| UC-S17 イントロスペクション | 内部処理 | Opaque / JWT 両対応 |
-| UC-S18 鍵ローテーション | 内部処理 | 新鍵生成、旧鍵の猶予期間付き公開、DB 永続化 |
-| UC-S19 セッション管理 | 内部処理 | Cookie ベースセッション、ログアウト時破棄 |
+前半（トークンライフサイクル: マイルストーン M1）を実装済みです。ログアウトとセッション管理は方式 A（M3）が前提のため未実装です。
 
-**Phase 4 トークン失効フロー:**
+| 実装対象 | 種別 | 実装 | 詳細 |
+|---------|------|------|------|
+| revoked_tokens テーブル・データアクセス | インフラ | ✅ | `RevokedTokenService`。失効したアクセストークンの JTI を保存・照合 |
+| signing_keys テーブル拡張 | インフラ | ✅ | 現用 / 猶予期間 / 退役の 3 状態を `is_active` と `expires_at` で表現 |
+| スキーママイグレーション機構 | インフラ | ✅ | `schema_migrations` で適用済みバージョンを管理。v1: `authorization_codes.consumed_at`、v2: `refresh_tokens.source_code_hash` |
+| E-06 `/connect/revoke` | エンドポイント | ✅ | `token` + `token_type_hint`。無効・未知・他クライアントのトークンでも 200（存在を漏らさない） |
+| E-07 `/connect/introspect` | エンドポイント | ✅ | `active`, `token_type`, `client_id`, `sub`, `scope`, `aud`, `iss`, `jti`, `iat`, `nbf`, `exp`（+ `username`） |
+| E-08 `/connect/logout` | エンドポイント | 🔲 | 方式 A 前提（M3） |
+| UC-S15 トークン失効処理 | 内部処理 | ✅ | RT は `is_revoked`、AT は JTI を `revoked_tokens` に登録 |
+| UC-S16 トークン失効チェック | 内部処理 | ✅ | AuthServer 内（UserInfo / Introspection）で照合。ResourceServer は照合しない（方式 3） |
+| UC-S17 イントロスペクション | 内部処理 | ✅ | JWT（アクセストークン）と参照型（リフレッシュトークン）の両対応 |
+| UC-S18 鍵ローテーション | 内部処理 | ✅ | 管理画面 `/signing-keys` から手動、または `SigningKeyRotationDays` で自動。旧鍵は猶予期間中 JWKS に公開 |
+| UC-S19 セッション管理 | 内部処理 | 🔲 | 方式 A 前提（M3） |
+| 期限切れデータのクリーンアップ | 内部処理 | ✅ | `MaintenanceService` が `MaintenanceIntervalMinutes` ごとに認可コード・RT・失効リストを削除し、猶予期間切れの鍵を退役 |
 
-```
-TestClient              AuthServer              ResourceServer
-    │                       │                        │
-    │ POST /connect/revoke  │                        │
-    │ token=xxx             │                        │
-    │ token_type_hint=      │                        │
-    │   access_token        │                        │
-    │ client_id=...         │                        │
-    │ client_secret=...     │                        │
-    │──────────────────────►│                        │
-    │                       │  JTI を revoked_tokens  │
-    │                       │  テーブルに INSERT      │
-    │◄──────────────────────│                        │
-    │ 200 OK                │                        │
-    │                       │                        │
-    │ GET /api/protected (失効済みトークン使用)        │
-    │ Authorization: Bearer {revoked_token}           │
-    │───────────────────────────────────────────────►│
-    │                       │                        │  JWT署名検証OK
-    │                       │  POST /connect/introspect│
-    │                       │◄───────────────────────│
-    │                       │  { "active": false }   │
-    │                       │───────────────────────►│
-    │◄──────────────────────────── 401 Unauthorized ─│
-```
+#### アクセストークン失効の反映範囲（方式 3）
 
-**Phase 4 鍵ローテーションフロー:**
+アクセストークンは自己完結型の JWT のため、失効を即時に反映するには ResourceServer 側が失効リストを参照する必要があります。
+本プロジェクトでは次の 3 案から **方式 3** を採用しました。
+
+| 方式 | 内容 | 採否 |
+|------|------|------|
+| 1 | ResourceServer が毎回（またはキャッシュ付きで）`/connect/introspect` を呼ぶ | 不採用。RS が AS に依存し、JWT のオフライン検証の利点を失う |
+| 2 | ResourceServer が JTI 失効リストを定期取得する | 不採用。同期遅延があり、実装コストに対する利点が小さい |
+| 3 | AT の失効は即時反映しない（RFC 7009 §2 も許容）。RT を確実に失効させ、AT は短寿命で対処 | **採用** |
+
+したがって、失効済みアクセストークンは AuthServer 自身のエンドポイント（UserInfo / Introspection）では拒否されますが、
+ResourceServer では有効期限まで受理されます。`AccessTokenLifetimeSeconds`（既定 3600 秒）が失効の反映遅延の上限になります。
+
+**トークン失効フロー（方式 3）:**
 
 ```
-AuthServer (内部)                    ResourceServer
-    │                                      │
-    │  [鍵ローテーション実行]                │
-    │  1. 新RSA鍵ペア生成 (kid=key-2)      │
-    │  2. DB に新鍵を INSERT (is_active=true)│
-    │  3. 旧鍵の is_active=false に UPDATE  │
-    │  4. JWKS に新旧両方公開               │
-    │     { "keys": [                      │
-    │       { "kid": "key-2", ... },       │
-    │       { "kid": "key-1", ... }        │
-    │     ]}                               │
-    │                                      │
-    │                                      │  新kid のJWT受信
-    │                                      │  → キャッシュ済みJWKSにkid無し
-    │  GET /.well-known/jwks.json          │
-    │◄─────────────────────────────────────│
-    │─────────────────────────────────────►│
-    │  { "keys": [key-2, key-1] }          │  新kidで検証成功
-    │                                      │
-    │  [猶予期間経過後]                      │
-    │  5. 旧鍵を signing_keys から DELETE   │
-    │     or expired フラグ設定             │
+TestClient              AuthServer                          ResourceServer
+    │                       │                                   │
+    │ POST /connect/revoke  token=RT  hint=refresh_token        │
+    │──────────────────────►│ refresh_tokens.is_revoked = 1     │
+    │◄──────────────────────│ 200 OK                            │
+    │                       │                                   │
+    │ POST /connect/revoke  token=AT  hint=access_token         │
+    │──────────────────────►│ JWT 検証 → jti を revoked_tokens へ │
+    │◄──────────────────────│ 200 OK                            │
+    │                       │                                   │
+    │ POST /connect/introspect  token=AT                        │
+    │──────────────────────►│ 検証 OK → 失効リスト照合 → 該当     │
+    │◄──────────────────────│ { "active": false }               │
+    │                       │                                   │
+    │ GET /connect/userinfo  Authorization: Bearer AT           │
+    │──────────────────────►│ 失効リスト照合                     │
+    │◄──────────────────────│ 401 invalid_token (revoked)       │
+    │                       │                                   │
+    │ GET /api/protected  Authorization: Bearer AT              │
+    │──────────────────────────────────────────────────────────►│ 署名・有効期限のみ検証
+    │◄──────────────────────────────────────────────────────────│ 200 OK（有効期限まで受理）
 ```
+
+**認可コード再使用・リフレッシュトークンリプレイ時のファミリー失効（SEC-04）:**
+
+```
+[認可コード再使用]
+  code C を交換 → RT1 発行 (refresh_tokens.source_code_hash = hash(C))
+  code C を再提示 → consumed_at あり = Reused
+      → source_code_hash = hash(C) の RT をすべて is_revoked = 1
+      → invalid_grant
+
+[リフレッシュトークンリプレイ]
+  RT1 を提示 → RT2 発行。RT1 は is_revoked = 1, replaced_by_token_hash = hash(RT2)
+  RT1 を再提示 → is_revoked かつ replaced_by あり = ローテーション後の旧トークンの再利用
+      → 同じ source_code_hash の RT (RT2 を含む) をすべて is_revoked = 1
+      → invalid_grant
+```
+
+**鍵ローテーションフロー:**
+
+```
+AuthServer (内部)                                        ResourceServer
+    │                                                         │
+    │  [ローテーション: 管理画面 /signing-keys または自動]       │
+    │  1. 新 RSA 鍵ペア生成 (kid=key-2), is_active=1           │
+    │  2. 旧鍵 (key-1) に expires_at = now + 猶予期間           │
+    │     ※ is_active は 1 のまま (猶予期間)                   │
+    │  3. JWKS に新旧両方を公開 (Cache-Control: max-age)        │
+    │     { "keys": [ key-2, key-1 ] }                         │
+    │                                                         │  key-2 で署名された JWT を受信
+    │                                                         │  → キャッシュ済み JWKS に kid 無し
+    │                                                         │  → この要求は 401 にし、JWKS 再取得を予約
+    │  GET /.well-known/jwks.json                              │    (ASP.NET Core JwtBearer の既定動作)
+    │◄────────────────────────────────────────────────────────│
+    │                                                         │  次の要求から key-2 の JWT を検証成功
+    │                                                         │  key-1 の JWT も猶予期間中は検証成功
+    │  [猶予期間経過後: MaintenanceService]                     │
+    │  4. key-1 を is_active=0 (退役)。JWKS から消える           │
+```
+
+`JwksCacheMaxAgeSeconds`（既定 3600 秒）は猶予期間 `SigningKeyGraceDays`（既定 7 日）より十分短くしてください。
+キャッシュが猶予期間を越えると、退役済みの鍵で署名されたトークンを検証しようとする ResourceServer が現れます。
+
+ASP.NET Core の JwtBearer は、未知の `kid` を受けた要求そのものは失敗させ（401）、JWKS の再取得を予約してから
+次の要求で新鍵を使います。実測でもローテーション直後の最初の 1 要求だけが 401 になり、以降は 200 でした。
+これを避けるには、新鍵を先に JWKS へ公開しておき、`JwksCacheMaxAgeSeconds` の経過後に署名鍵を切り替える
+2 段階ローテーション（事前公開）が必要です。`TODO.md` の M2 候補に挙げています。
 
 ### 6.6 Phase 5: 拡張機能
 
@@ -762,7 +798,7 @@ https://client.example.com/callback
 | HTTP Status | WWW-Authenticate | 条件 |
 |-------------|-----------------|------|
 | 401 | `Bearer` | トークン未提供 |
-| 401 | `Bearer error="invalid_token"` | トークン期限切れ・署名不正・失効済み |
+| 401 | `Bearer error="invalid_token"` | トークン期限切れ・署名不正。失効は反映されない（§6.5 方式 3） |
 | 403 | `Bearer error="insufficient_scope", scope="api.write"` | スコープ不足 |
 
 ---
@@ -776,7 +812,7 @@ https://client.example.com/callback
 | SEC-01 | HTTPS 必須 | 全通信 | 🔲 | 開発環境でも自己署名証明書で TLS を使用。現在は HTTP 構成（§2.5）。ResourceServer の `RequireHttpsMetadata` は既定 `true`（Development のみ `false`） |
 | SEC-02 | PKCE 必須 | Authorization Code Flow | ✅ | S256 のみ許可。`code_challenge` 省略時はエラー |
 | SEC-03 | state パラメータ検証 | Authorization Endpoint | ✅ | CSRF 防止。サーバーは `state` を認可コードと共に保存し応答で返却、TestClient が送信値との一致を検証（RFC 6749 §10.12 の役割分担どおり） |
-| SEC-04 | 認可コード一回限り使用 | Token Endpoint | 🟡 | 消費時に DELETE してリプレイを防止。ただし**再使用時に関連トークンを失効させる処理は未実装** |
+| SEC-04 | 認可コード一回限り使用 | Token Endpoint | ✅ | `consumed_at` で消費済みを記録。再提示時はそのコードから派生した RT ファミリー（`source_code_hash`）をすべて失効。ローテーション後の旧 RT の再提示も同様にファミリー失効 |
 | SEC-05 | redirect_uri 完全一致検証 | Authorization Endpoint | ✅ | 登録済み URI との完全一致。トークン交換時にも再照合 |
 | SEC-06 | パスワードハッシュ化 | ユーザー管理 | ✅ | PBKDF2-SHA256 / 60 万回反復 + `FixedTimeEquals` |
 | SEC-07 | トークン有効期限 | JWT | 🟡 | 実装値: アクセストークン 1 時間 (3600 秒)、**リフレッシュトークン 1 日 (86400 秒)**、**認可コード 2 分 (120 秒)**。当初仕様（30 日 / 10 分）とは異なる |
@@ -786,7 +822,9 @@ https://client.example.com/callback
 
 認可コード・リフレッシュトークンはいずれも SHA-256 ハッシュ（小文字 16 進）で保存し、
 平文は DB に残しません。リフレッシュトークンはローテーション時に旧トークンを失効させ、
-`replaced_by_token_hash` で追跡します。
+`replaced_by_token_hash` で追跡します。アクセストークンの失効は `revoked_tokens` に JTI を登録して表現し、
+AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合します。ResourceServer はオフライン検証のみのため、
+アクセストークンの失効は有効期限まで反映されません（§6.5 方式 3）。
 
 ### 8.2 JWT クレーム構成
 
@@ -831,11 +869,19 @@ https://client.example.com/callback
   "token_endpoint": "http://localhost:5080/connect/token",
   "userinfo_endpoint": "http://localhost:5080/connect/userinfo",
   "jwks_uri": "http://localhost:5080/.well-known/jwks.json",
+  "revocation_endpoint": "http://localhost:5080/connect/revoke",
+  "introspection_endpoint": "http://localhost:5080/connect/introspect",
   "grant_types_supported": [
     "client_credentials", "authorization_code", "refresh_token"
   ],
   "response_types_supported": ["code"],
   "token_endpoint_auth_methods_supported": [
+    "client_secret_post", "client_secret_basic"
+  ],
+  "revocation_endpoint_auth_methods_supported": [
+    "client_secret_post", "client_secret_basic"
+  ],
+  "introspection_endpoint_auth_methods_supported": [
     "client_secret_post", "client_secret_basic"
   ],
   "id_token_signing_alg_values_supported": ["RS256"],
@@ -852,9 +898,8 @@ https://client.example.com/callback
 }
 ```
 
-未反映の項目: `revocation_endpoint`, `introspection_endpoint`, `device_authorization_endpoint`,
-`end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ、
-および失効・検査エンドポイントの認証方式。いずれも対応エンドポイントが未実装のためです。
+未反映の項目: `device_authorization_endpoint`, `end_session_endpoint`, `registration_endpoint`,
+`response_modes_supported`, `offline_access` スコープ。いずれも対応エンドポイントが未実装のためです。
 `response_modes_supported` は方式 B（JSON 応答）に該当する標準値がないため、方式 A 実装時に追加します。
 `request_uri_parameter_supported` は省略時の既定値が `true` のため、未対応を明示するために `false` を出力しています。
 
@@ -1034,13 +1079,26 @@ CREATE TABLE resource_servers (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- マイグレーション管理 (適用済みバージョン)
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+
+-- マイグレーションで追加される列
+-- v1: 消費時刻。DELETE ではなく消費済みマークにして再使用を検知する
+ALTER TABLE authorization_codes ADD COLUMN consumed_at TEXT;
+-- v2: 発行元の認可コード。同じコードから派生した RT (ファミリー) をまとめて失効させる
+ALTER TABLE refresh_tokens ADD COLUMN source_code_hash TEXT;
 ```
 
 **実装との差異** (`AuthServer/Database/DatabaseInitializer.cs`):
 
 - 実装では `users.resource_server_id` 以外に `FOREIGN KEY` 制約を宣言していません
   (`authorization_codes`, `refresh_tokens`, `device_codes`, `consents` の各外部キー)
-- 実装は全テーブルを `CREATE TABLE IF NOT EXISTS` で作成し、マイグレーションは行いません
+- 基本スキーマ (v0) は `CREATE TABLE IF NOT EXISTS` で作成し、以降の変更は `schema_migrations` で管理するマイグレーションとして
+  バージョン順にトランザクション内で適用します（`DatabaseInitializer.Migrations`）。基本スキーマは変更せず、変更は必ずマイグレーションとして追記します
 - `resource_servers` は当初の仕様になく、リソースサーバー管理 UI の追加に伴って導入されたテーブルです
 
 ### 10.2 初期データ

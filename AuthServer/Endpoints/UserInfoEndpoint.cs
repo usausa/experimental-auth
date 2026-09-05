@@ -1,11 +1,6 @@
 namespace AuthServer.Endpoints;
 
-using AuthServer.Models;
 using AuthServer.Services;
-
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
 
 // UserInfo Endpoint (OIDC Core 1.0 §5.3)
 // GET /connect/userinfo
@@ -17,7 +12,7 @@ public static class UserInfoEndpoint
         app.MapGet("/connect/userinfo", HandleUserInfo)
             .WithTags("UserInfo")
             .WithSummary("ユーザー情報の取得")
-            .WithDescription("Bearer アクセストークンを検証し、トークンに紐づくユーザーのクレームを返します(OIDC Core 1.0 §5.3)。")
+            .WithDescription("Bearer アクセストークンを検証し、トークンに紐づくユーザーのクレームを返します(OIDC Core 1.0 §5.3)。失効済みトークンは拒否します。")
             .Produces<object>(StatusCodes.Status200OK, "application/json")
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .AllowAnonymous();
@@ -32,9 +27,9 @@ public static class UserInfoEndpoint
 
     private static async ValueTask<IResult> HandleUserInfo(
         HttpContext context,
-        SigningKeyService signingKeyService,
-        UserService userService,
-        IOptions<AuthServerOptions> options)
+        TokenService tokenService,
+        RevokedTokenService revokedTokenService,
+        UserService userService)
     {
         var authHeader = context.Request.Headers.Authorization.ToString();
         if (String.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
@@ -48,69 +43,50 @@ public static class UserInfoEndpoint
             return Unauthorized("Bearer token is empty");
         }
 
-        // JWT 検証
-        var keys = signingKeyService.GetAllActiveKeys();
-        var securityKeys = keys.Select(k =>
-        {
-            using var rsa = System.Security.Cryptography.RSA.Create();
-            rsa.ImportFromPem(k.PublicKeyPem);
-            return (SecurityKey)new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = k.Kid };
-        }).ToList();
-
-        var handler = new JsonWebTokenHandler();
-        var validationParams = new TokenValidationParameters
-        {
-            ValidIssuer = options.Value.Issuer,
-            IssuerSigningKeys = securityKeys,
-            #pragma warning disable CA5404
-            ValidateAudience = false,
-            #pragma warning restore CA5404
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30)
-        };
-
-        var result = await handler.ValidateTokenAsync(accessToken, validationParams);
-        if (!result.IsValid)
+        // JWT 検証 (署名・発行者・有効期限・typ=at+jwt) と失効リストの照合
+        var claims = await tokenService.ValidateAccessTokenAsync(accessToken);
+        if (claims is null)
         {
             return Unauthorized("Token validation failed");
         }
 
-        var claimsIdentity = result.ClaimsIdentity;
-        var sub = claimsIdentity.FindFirst("sub")?.Value;
-        if (String.IsNullOrEmpty(sub))
+        if (await revokedTokenService.IsRevokedAsync(claims.Jti))
+        {
+            return Unauthorized("Token has been revoked");
+        }
+
+        if (String.IsNullOrEmpty(claims.Sub))
         {
             return Unauthorized("Token has no sub claim");
         }
 
-        // client_credentials トークンはユーザーを持たない
-        var scopeClaim = claimsIdentity.FindFirst("scope")?.Value ?? string.Empty;
-        var scopes = scopeClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var scopes = claims.Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        var user = await userService.QueryUserAsync(sub);
+        var user = await userService.QueryUserAsync(claims.Sub);
         if (user is null)
         {
             // client_credentials の場合は sub = clientId なので最小限のクレームを返す
-            return Results.Json(new { sub });
+            return Results.Json(new { sub = claims.Sub });
         }
 
-        var claims = new Dictionary<string, object?> { ["sub"] = user.UserId };
+        var response = new Dictionary<string, object?> { ["sub"] = user.UserId };
 
         // profile スコープ
         if (Array.IndexOf(scopes, "profile") >= 0)
         {
             if (user.Name is not null)
             {
-                claims["name"] = user.Name;
+                response["name"] = user.Name;
             }
             if (user.GivenName is not null)
             {
-                claims["given_name"] = user.GivenName;
+                response["given_name"] = user.GivenName;
             }
             if (user.FamilyName is not null)
             {
-                claims["family_name"] = user.FamilyName;
+                response["family_name"] = user.FamilyName;
             }
-            claims["preferred_username"] = user.Username;
+            response["preferred_username"] = user.Username;
         }
 
         // email スコープ
@@ -118,12 +94,12 @@ public static class UserInfoEndpoint
         {
             if (user.Email is not null)
             {
-                claims["email"] = user.Email;
+                response["email"] = user.Email;
             }
-            claims["email_verified"] = user.EmailVerified;
+            response["email_verified"] = user.EmailVerified;
         }
 
-        return Results.Json(claims);
+        return Results.Json(response);
     }
 
     private static IResult Unauthorized(string description) =>

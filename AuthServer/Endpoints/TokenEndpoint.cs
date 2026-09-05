@@ -1,8 +1,5 @@
 namespace AuthServer.Endpoints;
 
-using System.Net.Http.Headers;
-using System.Text;
-
 using AuthServer.Models;
 using AuthServer.Services;
 
@@ -37,7 +34,8 @@ public static class TokenEndpoint
         ResourceServerService resourceServerService,
         AuthorizationCodeService codeService,
         RefreshTokenService refreshTokenService,
-        UserService userService)
+        UserService userService,
+        ILoggerFactory loggerFactory)
     {
         if (!context.Request.HasFormContentType)
         {
@@ -52,7 +50,7 @@ public static class TokenEndpoint
             return Error("invalid_request", "grant_type is required");
         }
 
-        var (clientId, clientSecret) = ResolveClientCredentials(context, form);
+        var (clientId, clientSecret) = ClientAuthentication.ResolveCredentials(context, form);
         if (String.IsNullOrEmpty(clientId))
         {
             return Error("invalid_client", "client_id is required", StatusCodes.Status401Unauthorized);
@@ -67,7 +65,7 @@ public static class TokenEndpoint
         return grantType switch
         {
             "client_credentials" => await HandleClientCredentials(client, form, tokenService, resourceServerService),
-            "authorization_code" => await HandleAuthorizationCode(client, form, tokenService, codeService, refreshTokenService, userService, resourceServerService),
+            "authorization_code" => await HandleAuthorizationCode(client, form, tokenService, codeService, refreshTokenService, userService, resourceServerService, loggerFactory),
             "refresh_token" => await HandleRefreshToken(client, form, tokenService, refreshTokenService, userService, resourceServerService),
             _ => Error("unsupported_grant_type", $"grant_type '{grantType}' is not supported")
         };
@@ -126,7 +124,8 @@ public static class TokenEndpoint
         AuthorizationCodeService codeService,
         RefreshTokenService refreshTokenService,
         UserService userService,
-        ResourceServerService resourceServerService)
+        ResourceServerService resourceServerService,
+        ILoggerFactory loggerFactory)
     {
         if (!client.AllowsGrantType("authorization_code"))
         {
@@ -151,12 +150,24 @@ public static class TokenEndpoint
             return Error("invalid_request", "code_verifier is required (PKCE)");
         }
 
-        // 認可コード消費
-        var info = await codeService.ConsumeAsync(code);
-        if (info is null)
+        // 認可コード消費 (ワンタイム)。消費済みコードの再提示は漏洩の疑いとみなし、
+        // そのコードから派生したリフレッシュトークンのファミリーをすべて失効させる (RFC 6749 §4.1.2)
+        var consume = await codeService.ConsumeAsync(code);
+        if (consume.Status == AuthorizationCodeConsumeStatus.Reused)
+        {
+            var revokedCount = await refreshTokenService.RevokeFamilyAsync(consume.Info!.CodeHash);
+            loggerFactory.CreateLogger("TokenEndpoint").LogWarning(
+                "Authorization code reuse detected for client {ClientId}; revoked {Count} refresh token(s).",
+                consume.Info.ClientId, revokedCount);
+            return Error("invalid_grant", "Authorization code is invalid or expired");
+        }
+
+        if (consume.Status != AuthorizationCodeConsumeStatus.Success)
         {
             return Error("invalid_grant", "Authorization code is invalid or expired");
         }
+
+        var info = consume.Info!;
 
         if (!String.Equals(info.ClientId, client.ClientId, StringComparison.Ordinal))
         {
@@ -205,7 +216,7 @@ public static class TokenEndpoint
         string? refreshToken = null;
         if (client.AllowsGrantType("refresh_token"))
         {
-            refreshToken = await refreshTokenService.IssueAsync(client.ClientId, user.UserId, info.Scopes);
+            refreshToken = await refreshTokenService.IssueAsync(client.ClientId, user.UserId, info.Scopes, info.CodeHash);
         }
 
         return Results.Json(new
@@ -292,35 +303,6 @@ public static class TokenEndpoint
             var servers = await resourceServerService.QueryActiveResourceServerListAsync();
             return servers.Count > 0 ? servers[0].Audience : null;
         }
-    }
-
-    private static (string ClientId, string? Secret) ResolveClientCredentials(HttpContext context, IFormCollection form)
-    {
-        // RFC 6749 §2.3.1: prefer Authorization: Basic.
-        var authHeader = context.Request.Headers.Authorization.ToString();
-        if (!String.IsNullOrEmpty(authHeader) &&
-            AuthenticationHeaderValue.TryParse(authHeader, out var parsed) &&
-            String.Equals(parsed.Scheme, "Basic", StringComparison.OrdinalIgnoreCase) &&
-            !String.IsNullOrEmpty(parsed.Parameter))
-        {
-            try
-            {
-                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(parsed.Parameter));
-                var idx = decoded.IndexOf(':', StringComparison.Ordinal);
-                if (idx >= 0)
-                {
-                    var id = Uri.UnescapeDataString(decoded[..idx]);
-                    var secret = Uri.UnescapeDataString(decoded[(idx + 1)..]);
-                    return (id, secret);
-                }
-            }
-            catch (FormatException)
-            {
-                // Fall through to form parameters.
-            }
-        }
-
-        return (form["client_id"].ToString(), form["client_secret"].ToString());
     }
 
     private static IResult Error(string code, string description, int status = StatusCodes.Status400BadRequest) =>

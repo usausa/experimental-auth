@@ -159,6 +159,55 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         return handler.CreateToken(descriptor);
     }
 
+    // アクセストークン (JWT) を検証し、クレームを返す。署名・発行者・有効期限を検証する。
+    // typ ヘッダーが at+jwt でないもの (ID Token など) はアクセストークンとして受け付けない。
+    // 失効リストの照合は呼び出し側 (UserInfo / Introspection) で行う。
+    public async Task<AccessTokenClaims?> ValidateAccessTokenAsync(string token)
+    {
+        var securityKeys = keyService.GetAllActiveKeys().Select(k =>
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportFromPem(k.PublicKeyPem);
+            return (SecurityKey)new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = k.Kid };
+        }).ToList();
+
+        var handler = new JsonWebTokenHandler();
+        var parameters = new TokenValidationParameters
+        {
+            ValidIssuer = options.Issuer,
+            IssuerSigningKeys = securityKeys,
+            // aud はリソースサーバーごとに異なり、AuthServer 自身は検証対象を固定できないため検証しない
+            #pragma warning disable CA5404
+            ValidateAudience = false,
+            #pragma warning restore CA5404
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+
+        var result = await handler.ValidateTokenAsync(token, parameters);
+        if (!result.IsValid || (result.SecurityToken is not JsonWebToken jwt))
+        {
+            return null;
+        }
+
+        if (!String.Equals(jwt.Typ, "at+jwt", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var identity = result.ClaimsIdentity;
+        return new AccessTokenClaims(
+            jwt.Id,
+            identity.FindFirst("sub")?.Value ?? String.Empty,
+            identity.FindFirst("client_id")?.Value ?? String.Empty,
+            identity.FindFirst("scope")?.Value ?? String.Empty,
+            identity.FindFirst("username")?.Value,
+            jwt.Audiences.FirstOrDefault() ?? String.Empty,
+            jwt.IssuedAt,
+            jwt.ValidFrom,
+            jwt.ValidTo);
+    }
+
     // at_hash: アクセストークンの ASCII 表現を alg 対応のハッシュ (RS256 → SHA-256) にかけ、
     // 左半分 (128bit) を base64url 化した値 (OIDC Core §3.1.3.6)。
     private static string ComputeAtHash(string accessToken)
@@ -169,3 +218,14 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 }
 
 public sealed record AccessTokenResult(string AccessToken, int ExpiresInSeconds, string Scope);
+
+public sealed record AccessTokenClaims(
+    string Jti,
+    string Sub,
+    string ClientId,
+    string Scope,
+    string? Username,
+    string Audience,
+    DateTime IssuedAt,
+    DateTime NotBefore,
+    DateTime ExpiresAt);

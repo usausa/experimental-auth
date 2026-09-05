@@ -57,41 +57,60 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
         return code;
     }
 
-    // 認可コードを消費する。成功時は情報を返し、コードを DB から削除する。失敗時は null。
-    public async Task<AuthorizationCodeInfo?> ConsumeAsync(string code)
+    // 認可コードを消費する。ワンタイム性は DELETE ではなく consumed_at で表現し、
+    // 消費済みコードの再提示 (= 漏洩の疑い) を Reused として呼び出し側に知らせる (RFC 6749 §4.1.2)。
+    public async Task<AuthorizationCodeConsumeResult> ConsumeAsync(string code)
     {
         var hash = HashCode(code);
         await using var connection = dbFactory.OpenConnection();
 
         var row = await connection.QueryFirstOrDefaultAsync<dynamic>("""
             SELECT client_id, user_id, redirect_uri, scopes,
-                   code_challenge, code_challenge_method, nonce, expires_at, created_at
+                   code_challenge, code_challenge_method, nonce, expires_at, created_at, consumed_at
             FROM authorization_codes WHERE code_hash = @Hash
             """, new { Hash = hash });
 
         if (row is null)
         {
-            return null;
+            return new AuthorizationCodeConsumeResult(AuthorizationCodeConsumeStatus.NotFound, null);
         }
 
-        // 消費(ワンタイム)
-        await connection.ExecuteAsync(
-            "DELETE FROM authorization_codes WHERE code_hash = @Hash", new { Hash = hash });
-
-        if (DateTime.Parse((string)row.expires_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind) < DateTime.UtcNow)
-        {
-            return null;
-        }
-
-        return new AuthorizationCodeInfo(
+        var info = new AuthorizationCodeInfo(
             (string)row.client_id,
             (string)row.user_id,
             (string)row.redirect_uri,
             (string)row.scopes,
-            row.code_challenge is DBNull ? null : (string?)row.code_challenge,
-            row.code_challenge_method is DBNull ? null : (string?)row.code_challenge_method,
-            row.nonce is DBNull ? null : (string?)row.nonce,
-            DateTime.Parse((string)row.created_at, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+            IsNull((object?)row.code_challenge) ? null : (string?)row.code_challenge,
+            IsNull((object?)row.code_challenge_method) ? null : (string?)row.code_challenge_method,
+            IsNull((object?)row.nonce) ? null : (string?)row.nonce,
+            ParseUtc((string)row.created_at),
+            hash);
+
+        if (!IsNull((object?)row.consumed_at))
+        {
+            return new AuthorizationCodeConsumeResult(AuthorizationCodeConsumeStatus.Reused, info);
+        }
+
+        // 消費 (ワンタイム)
+        await connection.ExecuteAsync(
+            "UPDATE authorization_codes SET consumed_at = @Now WHERE code_hash = @Hash",
+            new { Now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Hash = hash });
+
+        if (ParseUtc((string)row.expires_at) < DateTime.UtcNow)
+        {
+            return new AuthorizationCodeConsumeResult(AuthorizationCodeConsumeStatus.Expired, info);
+        }
+
+        return new AuthorizationCodeConsumeResult(AuthorizationCodeConsumeStatus.Success, info);
+    }
+
+    // 期限切れの認可コード (消費済みを含む) を削除する。
+    public async Task<int> DeleteExpiredAsync(DateTime now)
+    {
+        await using var connection = dbFactory.OpenConnection();
+        return await connection.ExecuteAsync(
+            "DELETE FROM authorization_codes WHERE expires_at < @Now",
+            new { Now = now.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture) });
     }
 
     // PKCE code_verifier を検証する(S256)。
@@ -124,8 +143,23 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+
+    private static DateTime ParseUtc(string value) =>
+        DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+    private static bool IsNull(object? value) => value is null || value is DBNull;
 }
 #pragma warning restore CA1054
+
+public enum AuthorizationCodeConsumeStatus
+{
+    Success,
+    NotFound,
+    Expired,
+    Reused
+}
+
+public sealed record AuthorizationCodeConsumeResult(AuthorizationCodeConsumeStatus Status, AuthorizationCodeInfo? Info);
 
 #pragma warning disable CA1054
 #pragma warning disable CA1056
@@ -138,6 +172,8 @@ public sealed record AuthorizationCodeInfo(
     string? CodeChallengeMethod,
     string? Nonce,
     // ユーザー認証時刻。方式 B では資格情報の検証直後にコードを発行するため created_at と一致する (ID Token の auth_time)
-    DateTime AuthTime);
+    DateTime AuthTime,
+    // コードのハッシュ。発行したリフレッシュトークンの source_code_hash に記録し、ファミリー単位の失効に使う
+    string CodeHash);
 #pragma warning restore CA1056
 #pragma warning restore CA1054

@@ -1,0 +1,47 @@
+@page "/signing-keys"
+@rendermode InteractiveServer
+
+<PageTitle>Signing Keys - AuthServer</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Rotating creates a new signing key immediately. The previous key stays published in JWKS for @GraceDays day(s) so tokens it signed remain valid.
+    </MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Autorenew" OnClick="RotateAsync">Rotate Key</MudButton>
+</MudStack>
+
+<MudTable Items="keys" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.SigningKey">
+    <HeaderContent>
+        <MudTh Class="col-icon"></MudTh>
+        <MudTh>Key ID</MudTh>
+        <MudTh>Algorithm</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh Class="col-datetime">Created</MudTh>
+        <MudTh Class="col-datetime">Expires</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <MudIcon Icon="@Icons.Material.Filled.Key"
+                     Color="@(IsCurrent(context) ? Color.Primary : Color.Default)"
+                     Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="Key ID">
+            <MudText Class="text-monospace">@context.Kid</MudText>
+        </MudTd>
+        <MudTd DataLabel="Algorithm">@context.Algorithm</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context)">@GetStatus(context)</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Created">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Expires">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4 mud-text-secondary">No signing keys found.</MudText>
+    </NoRecordsContent>
+</MudTable>

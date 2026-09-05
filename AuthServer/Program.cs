@@ -57,6 +57,15 @@ builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<AuthorizationCodeService>();
 builder.Services.AddSingleton<RefreshTokenService>();
+builder.Services.AddSingleton<RevokedTokenService>();
+
+// 期限切れデータのクリーンアップと鍵の自動ローテーション。
+// 保守ジョブの例外でホスト全体が停止しないようにする (例外はホストがログに記録する)。
+builder.Services.AddHostedService<MaintenanceService>();
+builder.Services.Configure<HostOptions>(options =>
+{
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
 
 builder.Services.AddMudServices();
 
@@ -88,6 +97,8 @@ app.MapJwksEndpoint();
 app.MapTokenEndpoint();
 app.MapAuthorizeEndpoint();
 app.MapUserInfoEndpoint();
+app.MapRevocationEndpoint();
+app.MapIntrospectionEndpoint();
 
 app.MapDefaultEndpoints();
 

@@ -438,9 +438,12 @@ public sealed class RefreshCommand : ICommandHandler
 // ---------------------------------------------------------------------------
 // introspect
 // ---------------------------------------------------------------------------
-[Command("introspect", "Inspect a token via the introspection endpoint")]
+[Command("introspect", "Inspect the saved access or refresh token via the introspection endpoint")]
 public sealed class IntrospectCommand : ICommandHandler
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly string[] TokenTypes = ["access", "refresh"];
+
     private readonly HttpClient http;
 
     public IntrospectCommand(HttpClient http)
@@ -457,6 +460,9 @@ public sealed class IntrospectCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--token-type", "-t", Description = "Token to inspect (access | refresh)")]
+    public string TokenType { get; set; } = "access";
+
     [Option<string>("--token-file", "-f", Description = "Token file path")]
     public string? TokenFilePath { get; set; }
 
@@ -465,20 +471,29 @@ public sealed class IntrospectCommand : ICommandHandler
         var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
         var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
-
-        var store = TokenFile.Load(TokenFilePath);
-        if (store?.AccessToken is null)
+        var tokenType = CommandOptionHelper.NormalizeChoice(TokenType, "access", TokenTypes);
+        if (tokenType is null)
         {
-            ConsoleHelper.WriteError("No token found. Run 'token' command first.");
+            ConsoleHelper.WriteError("--token-type must be 'access' or 'refresh'.");
             context.ExitCode = 1;
             return;
         }
 
-        Console.WriteLine($"Introspecting token at {authBase.TrimEnd('/')}/connect/introspect ...");
+        var store = TokenFile.Load(TokenFilePath);
+        var token = tokenType == "refresh" ? store?.RefreshToken : store?.AccessToken;
+        if (token is null)
+        {
+            ConsoleHelper.WriteError($"No {tokenType} token found. Run 'token' command first.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        Console.WriteLine($"Introspecting {tokenType} token at {authBase.TrimEnd('/')}/connect/introspect ...");
 
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["token"] = store.AccessToken,
+            ["token"] = token,
+            ["token_type_hint"] = tokenType == "refresh" ? "refresh_token" : "access_token",
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret
         });
@@ -494,16 +509,29 @@ public sealed class IntrospectCommand : ICommandHandler
             return;
         }
 
-        Console.WriteLine(body);
+        using var doc = JsonDocument.Parse(body);
+        var active = doc.RootElement.TryGetProperty("active", out var a) && a.GetBoolean();
+        if (active)
+        {
+            ConsoleHelper.WriteSuccess("Token is active.");
+        }
+        else
+        {
+            ConsoleHelper.WriteError("Token is NOT active (revoked, expired, or unknown).");
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(doc.RootElement, JsonOptions));
     }
 }
 
 // ---------------------------------------------------------------------------
 // revoke
 // ---------------------------------------------------------------------------
-[Command("revoke", "Revoke the saved access token")]
+[Command("revoke", "Revoke the saved tokens via the revocation endpoint")]
 public sealed class RevokeCommand : ICommandHandler
 {
+    private static readonly string[] TokenTypes = ["all", "access", "refresh"];
+
     private readonly HttpClient http;
 
     public RevokeCommand(HttpClient http)
@@ -520,6 +548,9 @@ public sealed class RevokeCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--token-type", "-t", Description = "Token to revoke (all | access | refresh)")]
+    public string TokenType { get; set; } = "all";
+
     [Option<string>("--token-file", "-f", Description = "Token file path")]
     public string? TokenFilePath { get; set; }
 
@@ -528,39 +559,74 @@ public sealed class RevokeCommand : ICommandHandler
         var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
         var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var tokenType = CommandOptionHelper.NormalizeChoice(TokenType, "all", TokenTypes);
+        if (tokenType is null)
+        {
+            ConsoleHelper.WriteError("--token-type must be 'all', 'access', or 'refresh'.");
+            context.ExitCode = 1;
+            return;
+        }
 
         var store = TokenFile.Load(TokenFilePath);
-        if (store?.AccessToken is null)
+        if ((store is null) || ((store.AccessToken is null) && (store.RefreshToken is null)))
         {
             ConsoleHelper.WriteError("No token found. Run 'token' command first.");
             context.ExitCode = 1;
             return;
         }
 
-        Console.WriteLine($"Revoking token at {authBase.TrimEnd('/')}/connect/revoke ...");
+        var url = $"{authBase.TrimEnd('/')}/connect/revoke";
+        Console.WriteLine($"Revoking token(s) at {url} ...");
 
+        // リソースサーバーはアクセストークンの失効を参照しない (方式 3) ため、セッションを終わらせる意味では
+        // リフレッシュトークンの失効が本質。既定では両方を失効させる。
+        if ((tokenType is "all" or "refresh") && (store.RefreshToken is not null))
+        {
+            if (!await RevokeAsync(url, store.RefreshToken, "refresh_token", clientId, clientSecret, context))
+            {
+                return;
+            }
+
+            store.RefreshToken = null;
+            ConsoleHelper.WriteInfo("refresh_token", "revoked");
+        }
+
+        if ((tokenType is "all" or "access") && (store.AccessToken is not null))
+        {
+            if (!await RevokeAsync(url, store.AccessToken, "access_token", clientId, clientSecret, context))
+            {
+                return;
+            }
+
+            store.AccessToken = null;
+            ConsoleHelper.WriteInfo("access_token ", "revoked (resource servers keep accepting it until it expires)");
+        }
+
+        TokenFile.Save(store, TokenFilePath);
+        ConsoleHelper.WriteSuccess("Revocation completed and tokens cleared from file.");
+    }
+
+    private async Task<bool> RevokeAsync(string url, string token, string hint, string clientId, string clientSecret, CommandContext context)
+    {
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["token"] = store.AccessToken,
-            ["token_type_hint"] = "access_token",
+            ["token"] = token,
+            ["token_type_hint"] = hint,
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret
         });
 
-        var response = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/revoke", content);
-
-        if (!response.IsSuccessStatusCode)
+        var response = await http.PostAsync(url, content);
+        if (response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync();
-            ConsoleHelper.WriteError($"Revoke failed: {(int)response.StatusCode} {response.ReasonPhrase}");
-            ConsoleHelper.WriteError(body);
-            context.ExitCode = 1;
-            return;
+            return true;
         }
 
-        store.AccessToken = null;
-        TokenFile.Save(store, TokenFilePath);
-        ConsoleHelper.WriteSuccess("Token revoked and cleared from file.");
+        var body = await response.Content.ReadAsStringAsync();
+        ConsoleHelper.WriteError($"Revoke ({hint}) failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+        ConsoleHelper.WriteError(body);
+        context.ExitCode = 1;
+        return false;
     }
 }
 

@@ -42,8 +42,8 @@ dotnet run -- <command> [options]
 | `api` | 保存済みアクセストークンで ResourceServer の保護 API を呼び出す |
 | `refresh` | リフレッシュトークンで新しいアクセストークンを取得する |
 | `userinfo` | UserInfo エンドポイントからユーザー情報を取得する |
-| `introspect` | トークンイントロスペクションを実行する |
-| `revoke` | トークンを失効させる |
+| `introspect` | 保存済みトークン（access / refresh）の状態を検査する |
+| `revoke` | 保存済みトークンを失効させる（既定は access / refresh の両方） |
 
 ### ユースケース別使用例
 
@@ -106,13 +106,13 @@ dotnet run -- api \
   --path /api/protected \
   --method GET
 
-# 4. トークンのメタ情報を確認する(未実装: Phase 4)
+# 4. トークンのメタ情報を確認する
 dotnet run -- introspect \
   --auth http://localhost:5080 \
   --client-id test-client \
   --client-secret test-secret
 
-# 5. 使い終わったらトークンを失効させる(未実装: Phase 4)
+# 5. 使い終わったらトークンを失効させる(アクセストークンと、あればリフレッシュトークンの両方)
 dotnet run -- revoke \
   --auth http://localhost:5080 \
   --client-id test-client \
@@ -193,6 +193,7 @@ dotnet run -- api \
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--token-type` | `-t` | `access`（introspect）/ `all`（revoke） | 対象トークン。introspect: `access` \| `refresh`、revoke: `all` \| `access` \| `refresh` |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
 
 #### `userinfo` / `discovery`
@@ -217,8 +218,8 @@ dotnet run -- api \
 | `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` グラント対応) |
 | `/connect/authorize` | POST | ✅ 実装済み | 2 | ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
 | `/connect/userinfo` | GET | ✅ 実装済み | 2 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
-| `/connect/revoke` | POST | 🔲 未実装 | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
-| `/connect/introspect` | POST | 🔲 未実装 | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
+| `/connect/revoke` | POST | ✅ 実装済み | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
+| `/connect/introspect` | POST | ✅ 実装済み | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
 | `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄) |
 | `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
@@ -229,6 +230,12 @@ dotnet run -- api \
 > POST 方式のみを提供しています。この方式ではユーザーのパスワードがクライアントを
 > 経由するため、信頼モデルとしては ROPC 相当です。
 > 標準方式との差異は `SPEC.md` §6.3 を参照してください。
+
+> **トークン失効の反映範囲（方式 3）**
+> `/connect/revoke` で失効させたアクセストークンは、AuthServer 自身のエンドポイント（UserInfo / Introspection）では
+> 直ちに拒否されますが、ResourceServer はオフラインで署名検証するだけなので有効期限まで受理し続けます。
+> セッションを確実に終わらせたい場合はリフレッシュトークンを失効させ、アクセストークンの有効期限を短く保ってください。
+> 詳細は `SPEC.md` §6.5 を参照してください。
 
 ---
 
@@ -256,10 +263,10 @@ dotnet run -- api \
 | ID Token 生成 (`nonce` / `auth_time` / `at_hash` / `amr`) | OIDC Core 1.0 §2 | OIDC 必須 | ✅ 実装済み | 2〜3 |
 | UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | ✅ 実装済み | 2 |
 | 同意画面 / 同意情報管理 | OIDC Core 1.0 §3.1.2 | 標準 | 🔲 未実装 | 3 |
-| Token Revocation | RFC 7009 | 広く実装 | 🔲 未実装 | 4 |
-| Token Introspection | RFC 7662 | 広く実装 | 🔲 未実装 | 4 |
+| Token Revocation | RFC 7009 | 広く実装 | ✅ 実装済み | 4 |
+| Token Introspection | RFC 7662 | 広く実装 | ✅ 実装済み | 4 |
 | RP-Initiated Logout | OIDC RP-Logout 1.0 | 標準 | 🔲 未実装 | 4 |
-| 鍵ローテーション | RFC 7517 | 推奨 | 🔲 未実装 | 4 |
+| 鍵ローテーション | RFC 7517 | 推奨 | ✅ 実装済み | 4 |
 | Device Authorization Grant | RFC 8628 | CLI/IoT 向け標準 | 🔲 未実装 | 5 |
 | Dynamic Client Registration | RFC 7591 / 7592 | SaaS 向け標準 | 🔲 未実装 | 5 |
 
