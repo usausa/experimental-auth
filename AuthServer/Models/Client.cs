@@ -1,6 +1,6 @@
 namespace AuthServer.Models;
 
-/// <summary>OAuth 2.0 / OIDC client registration record.</summary>
+// OAuth 2.0 / OIDC client registration record.
 public sealed class Client
 {
     public string ClientId { get; set; } = default!;

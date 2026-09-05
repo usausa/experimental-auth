@@ -56,7 +56,7 @@ public sealed class ResourceServerService(DbConnectionFactory dbFactory)
     {
         ArgumentNullException.ThrowIfNull(server);
         var now = DateTime.UtcNow;
-        server.ResourceServerId = string.IsNullOrEmpty(server.ResourceServerId)
+        server.ResourceServerId = String.IsNullOrEmpty(server.ResourceServerId)
             ? Guid.NewGuid().ToString("N")[..16]
             : server.ResourceServerId;
         server.CreatedAt = now;

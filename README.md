@@ -39,27 +39,30 @@ dotnet run -- <command> [options]
 
 #### ユースケース 1: ユーザー認証(authorization_code + PKCE)
 
-ブラウザを介してユーザーがログインし、その認可を得てアクセストークンと ID Token を取得するフローです。(Phase 2 実装予定)
+API クライアントがユーザー資格情報を直接送信して認可コードを取得し、アクセストークン・ID Token・リフレッシュトークンを受け取るフローです。  
+AuthServer は **API 専用サーバー**のため、ブラウザリダイレクトは行いません。認可コードは `POST /connect/authorize` の JSON レスポンスとして返されます。
 
 ```bash
-# 1. ブラウザ経由でユーザー認証・認可コード取得 → トークン交換(Phase 2)
+# 1. authorization_code + PKCE でトークンを取得(認可コード取得とトークン交換を自動実行)
 dotnet run -- token \
   --auth http://localhost:5080 \
   --grant authorization_code \
   --client-id test-webapp \
   --client-secret webapp-secret \
-  --scope "openid profile email api.read"
+  --scope "openid profile email api.read" \
+  --username alice \
+  --password password
 
 # 2. 取得したアクセストークンで保護 API を呼び出す
 dotnet run -- api \
   --resource http://localhost:5180 \
   --path /api/protected
 
-# 3. ID Token のユーザー情報を取得する(未実装: Phase 3)
+# 3. UserInfo エンドポイントでユーザー情報を取得する
 dotnet run -- userinfo \
   --auth http://localhost:5080
 
-# 4. リフレッシュトークンでアクセストークンを更新する(未実装: Phase 2)
+# 4. リフレッシュトークンでアクセストークンを更新する
 dotnet run -- refresh \
   --auth http://localhost:5080 \
   --client-id test-webapp \
@@ -151,8 +154,8 @@ dotnet run -- api \
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
 | `--scope` | `-s` | `api.read api.write` | スコープ(スペース区切り) |
-| `--username` | `-u` | — | ユーザー名(password グラント用) |
-| `--password` | `-p` | — | パスワード(password グラント用) |
+| `--username` | `-u` | — | ユーザー名(`authorization_code` グラント用) |
+| `--password` | `-p` | — | パスワード(`authorization_code` グラント用) |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
 
 #### `api`
@@ -187,6 +190,7 @@ dotnet run -- api \
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス(`userinfo` のみ) |
 
 ### トークンの保存場所
 
@@ -200,16 +204,12 @@ dotnet run -- api \
 |--------------|---------|---------|-------|------|
 | `/.well-known/openid-configuration` | GET | ✅ 実装済み | 1 | OIDC Discovery ドキュメントを返す |
 | `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
-| `/connect/token` | POST | ✅ 実装済み | 1 | アクセストークン・リフレッシュトークンを発行する(`client_credentials` グラント実装済み) |
-| `/connect/authorize` | GET | 🔲 未実装 | 2 | Authorization Code Flow の認可エンドポイント(PKCE 対応) |
-| `/connect/token` (authorization_code) | POST | 🔲 未実装 | 2 | 認可コードをアクセストークン・ID Token・リフレッシュトークンに交換する |
-| `/connect/token` (refresh_token) | POST | 🔲 未実装 | 2 | リフレッシュトークンで新しいアクセストークンを発行する |
-| `/account/login` | GET/POST | 🔲 未実装 | 2 | ユーザーログイン画面(Blazor) |
-| `/connect/userinfo` | GET | 🔲 未実装 | 3 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
-| `/account/consent` | GET/POST | 🔲 未実装 | 3 | スコープ同意画面(Blazor) |
+| `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` グラント対応) |
+| `/connect/authorize` | POST | ✅ 実装済み | 2 | ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
+| `/connect/userinfo` | GET | ✅ 実装済み | 2 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
 | `/connect/revoke` | POST | 🔲 未実装 | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
 | `/connect/introspect` | POST | 🔲 未実装 | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
-| `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄・RP へのリダイレクト) |
+| `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄) |
 | `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
@@ -231,13 +231,12 @@ dotnet run -- api \
 | ResourceServer JWT Bearer 認証 | RFC 6750 | 標準 | ✅ 実装済み | 1 |
 | スコープベースの認可 | RFC 6749 §3.3 | 標準 | ✅ 実装済み | 1 |
 | ユーザー管理 UI (MudBlazor) | — | — | ✅ 実装済み | 2 |
-| Authorization Endpoint | RFC 6749 §3.1 | 必須 | 🔲 未実装 | 2 |
-| Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | 🔲 未実装 | 2 |
-| PKCE | RFC 7636 | 現在必須 | 🔲 未実装 | 2 |
-| Refresh Token | RFC 6749 §6 | 標準 | 🔲 未実装 | 2 |
-| ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | 🔲 未実装 | 3 |
-| UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | 🔲 未実装 | 3 |
-| Consent 画面 (Blazor) | — | 推奨 | 🔲 未実装 | 3 |
+| Authorization Endpoint (API) | RFC 6749 §3.1 | 必須 | ✅ 実装済み | 2 |
+| Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | ✅ 実装済み | 2 |
+| PKCE | RFC 7636 | 現在必須 | ✅ 実装済み | 2 |
+| Refresh Token | RFC 6749 §6 | 標準 | ✅ 実装済み | 2 |
+| ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | ✅ 実装済み | 2 |
+| UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | ✅ 実装済み | 2 |
 | Token Revocation | RFC 7009 | 広く実装 | 🔲 未実装 | 4 |
 | Token Introspection | RFC 7662 | 広く実装 | 🔲 未実装 | 4 |
 | RP-Initiated Logout | OIDC RP-Logout 1.0 | 標準 | 🔲 未実装 | 4 |

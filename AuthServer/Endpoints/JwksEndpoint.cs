@@ -39,8 +39,8 @@ public static class JwksEndpoint
                 use = "sig",
                 alg = sk.Algorithm,
                 kid = sk.Kid,
-                n = Base64UrlEncoder.Encode(parameters.Modulus!),
-                e = Base64UrlEncoder.Encode(parameters.Exponent!)
+                n = Base64UrlEncoder.Encode(parameters.Modulus),
+                e = Base64UrlEncoder.Encode(parameters.Exponent)
             });
         }
         return Results.Json(new { keys });

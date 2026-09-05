@@ -34,11 +34,11 @@ public sealed class ClientService(DbConnectionFactory dbFactory)
     public static bool ValidateSecret(Client client, string? secret)
     {
         ArgumentNullException.ThrowIfNull(client);
-        if (string.IsNullOrEmpty(client.ClientSecretHash))
+        if (String.IsNullOrEmpty(client.ClientSecretHash))
         {
-            return string.IsNullOrEmpty(secret);
+            return String.IsNullOrEmpty(secret);
         }
-        return !string.IsNullOrEmpty(secret) && PasswordHasher.Verify(secret, client.ClientSecretHash);
+        return !String.IsNullOrEmpty(secret) && PasswordHasher.Verify(secret, client.ClientSecretHash);
     }
 
     public static string FormatDateTime(DateTime value) =>

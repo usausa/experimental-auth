@@ -51,13 +51,13 @@ public partial class ResourceServerEditDialog
 
     private async Task SaveAsync()
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (String.IsNullOrWhiteSpace(name))
         {
             Snackbar.Add("Name is required.", Severity.Warning);
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(audience))
+        if (String.IsNullOrWhiteSpace(audience))
         {
             Snackbar.Add("Audience URL is required.", Severity.Warning);
             return;
@@ -75,7 +75,7 @@ public partial class ResourceServerEditDialog
             {
                 Name = name.Trim(),
                 Audience = audience.Trim(),
-                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+                Description = String.IsNullOrWhiteSpace(description) ? null : description.Trim(),
                 IsActive = isActive
             };
             await ResourceServerService.CreateAsync(server);
@@ -88,7 +88,7 @@ public partial class ResourceServerEditDialog
                 ResourceServerId = ResourceServerId,
                 Name = name.Trim(),
                 Audience = audience.Trim(),
-                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
+                Description = String.IsNullOrWhiteSpace(description) ? null : description.Trim(),
                 IsActive = isActive
             };
             await ResourceServerService.UpdateAsync(server);

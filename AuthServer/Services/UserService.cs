@@ -63,7 +63,7 @@ public sealed class UserService(DbConnectionFactory dbFactory)
         ArgumentException.ThrowIfNullOrWhiteSpace(plainPassword);
 
         var now = DateTime.UtcNow;
-        user.UserId = string.IsNullOrEmpty(user.UserId) ? Guid.NewGuid().ToString("N")[..16] : user.UserId;
+        user.UserId = String.IsNullOrEmpty(user.UserId) ? Guid.NewGuid().ToString("N")[..16] : user.UserId;
         user.PasswordHash = PasswordHasher.Hash(plainPassword);
         user.CreatedAt = now;
         user.UpdatedAt = now;
@@ -160,5 +160,20 @@ public sealed class UserService(DbConnectionFactory dbFactory)
             "SELECT COUNT(*) FROM users WHERE username = @Username AND (@ExcludeId IS NULL OR user_id != @ExcludeId)",
             new { Username = username, ExcludeId = excludeUserId });
         return count > 0;
+    }
+
+    // ユーザー名とパスワードを検証し、有効なら User を返す。
+    public async Task<User?> AuthenticateAsync(string username, string password)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(username);
+        ArgumentException.ThrowIfNullOrWhiteSpace(password);
+
+        var user = await QueryUserByUsernameAsync(username);
+        if ((user is null) || !user.IsActive)
+        {
+            return null;
+        }
+
+        return PasswordHasher.Verify(password, user.PasswordHash) ? user : null;
     }
 }

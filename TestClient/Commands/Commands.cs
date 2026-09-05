@@ -45,12 +45,16 @@ public sealed class TokenCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
-        var form = BuildForm();
-        if (form is null)
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var grant = String.IsNullOrEmpty(GrantType) ? "client_credentials" : GrantType;
+
+        if (grant == "authorization_code")
         {
+            await ExecuteAuthorizationCodeAsync(context, authBase);
             return;
         }
+
+        var form = BuildClientCredentialsForm();
 
         Console.WriteLine($"Requesting token from {authBase.TrimEnd('/')}/connect/token ...");
         Console.WriteLine($"  grant_type : {form["grant_type"]}");
@@ -95,31 +99,147 @@ public sealed class TokenCommand : ICommandHandler
         }
     }
 
-    private Dictionary<string, string>? BuildForm()
+    private async Task ExecuteAuthorizationCodeAsync(CommandContext context, string authBase)
     {
-        var grant = string.IsNullOrEmpty(GrantType) ? "client_credentials" : GrantType;
-        var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
-        var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
-        var scope = string.IsNullOrEmpty(Scope) ? "api.read api.write" : Scope;
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-webapp" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "webapp-secret" : ClientSecret;
+        var scope = String.IsNullOrEmpty(Scope) ? "openid profile email api.read" : Scope;
+        var username = Username;
+        var password = Password;
 
-        return grant switch
+        if (String.IsNullOrEmpty(username) || String.IsNullOrEmpty(password))
         {
-            "client_credentials" => new Dictionary<string, string>
-            {
-                ["grant_type"] = "client_credentials",
-                ["client_id"] = clientId,
-                ["client_secret"] = clientSecret,
-                ["scope"] = scope
-            },
-            // TODO : Implement authorization_code and password grants in Phase 2
-            _ => UnsupportedGrant(grant)
+            ConsoleHelper.WriteError("--username and --password are required for authorization_code grant.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        // PKCE
+        var codeVerifier = GeneratePkceVerifier();
+        var codeChallenge = ComputeS256Challenge(codeVerifier);
+        var state = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        Console.WriteLine($"Requesting authorization code from {authBase.TrimEnd('/')}/connect/authorize ...");
+        Console.WriteLine($"  client_id : {clientId}");
+        Console.WriteLine($"  scope     : {scope}");
+        Console.WriteLine($"  username  : {username}");
+
+        using var authorizeContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["response_type"] = "code",
+            ["client_id"] = clientId,
+            ["redirect_uri"] = "http://localhost:5173/callback",
+            ["scope"] = scope,
+            ["code_challenge"] = codeChallenge,
+            ["code_challenge_method"] = "S256",
+            ["state"] = state,
+            ["username"] = username,
+            ["password"] = password
+        });
+
+        var authorizeResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/authorize", authorizeContent);
+        var authorizeBody = await authorizeResponse.Content.ReadAsStringAsync();
+
+        if (!authorizeResponse.IsSuccessStatusCode)
+        {
+            ConsoleHelper.WriteError($"Authorization failed: {(int)authorizeResponse.StatusCode} {authorizeResponse.ReasonPhrase}");
+            ConsoleHelper.WriteError(authorizeBody);
+            context.ExitCode = 1;
+            return;
+        }
+
+        using var authorizeDoc = JsonDocument.Parse(authorizeBody);
+        var code = authorizeDoc.RootElement.GetProperty("code").GetString();
+        if (String.IsNullOrEmpty(code))
+        {
+            ConsoleHelper.WriteError("Authorization code not found in response.");
+            context.ExitCode = 1;
+            return;
+        }
+
+        Console.WriteLine($"  code      : {ConsoleHelper.Truncate(code, 40)}");
+
+        // トークン交換
+        Console.WriteLine($"Exchanging code for tokens at {authBase.TrimEnd('/')}/connect/token ...");
+
+        using var tokenContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["redirect_uri"] = "http://localhost:5173/callback",
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+            ["code_verifier"] = codeVerifier
+        });
+
+        var tokenResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", tokenContent);
+        var tokenBody = await tokenResponse.Content.ReadAsStringAsync();
+
+        if (!tokenResponse.IsSuccessStatusCode)
+        {
+            ConsoleHelper.WriteError($"Token exchange failed: {(int)tokenResponse.StatusCode} {tokenResponse.ReasonPhrase}");
+            ConsoleHelper.WriteError(tokenBody);
+            context.ExitCode = 1;
+            return;
+        }
+
+        using var tokenDoc = JsonDocument.Parse(tokenBody);
+        var tokenRoot = tokenDoc.RootElement;
+
+        var store = new TokenStore
+        {
+            AccessToken = tokenRoot.GetProperty("access_token").GetString(),
+            TokenType = tokenRoot.TryGetProperty("token_type", out var tt) ? tt.GetString() : "Bearer",
+            ExpiresIn = tokenRoot.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600,
+            Scope = tokenRoot.TryGetProperty("scope", out var sc) ? sc.GetString() : scope,
+            RefreshToken = tokenRoot.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
+            IdToken = tokenRoot.TryGetProperty("id_token", out var it) ? it.GetString() : null,
+            IssuedAt = DateTimeOffset.UtcNow
         };
+
+        TokenFile.Save(store, TokenFilePath);
+
+        ConsoleHelper.WriteSuccess("Token obtained successfully (authorization_code).");
+        ConsoleHelper.WriteInfo("access_token", ConsoleHelper.Truncate(store.AccessToken!, 60));
+        ConsoleHelper.WriteInfo("expires_in  ", $"{store.ExpiresIn}s (expires at {store.ExpiresAt.ToLocalTime():HH:mm:ss})");
+        ConsoleHelper.WriteInfo("scope       ", store.Scope ?? string.Empty);
+        ConsoleHelper.WriteInfo("saved to    ", TokenFilePath ?? TokenFile.DefaultPath);
+        if (store.RefreshToken is not null)
+        {
+            ConsoleHelper.WriteInfo("refresh_tkn ", ConsoleHelper.Truncate(store.RefreshToken, 40));
+        }
+        if (store.IdToken is not null)
+        {
+            ConsoleHelper.WriteInfo("id_token    ", ConsoleHelper.Truncate(store.IdToken, 60));
+        }
     }
 
-    private static Dictionary<string, string>? UnsupportedGrant(string grant)
+    private static string GeneratePkceVerifier()
     {
-        ConsoleHelper.WriteError($"Grant type '{grant}' is not yet implemented in this client.");
-        return null;
+        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static string ComputeS256Challenge(string verifier)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(verifier));
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private Dictionary<string, string> BuildClientCredentialsForm()
+    {
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var scope = String.IsNullOrEmpty(Scope) ? "api.read api.write" : Scope;
+
+        return new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+            ["scope"] = scope
+        };
     }
 }
 
@@ -150,9 +270,9 @@ public sealed class ApiCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var resourceBase = string.IsNullOrEmpty(ResourceServer) ? ServerUrls.ResourceServer : ResourceServer;
-        var apiPath = string.IsNullOrEmpty(Path) ? "/api/protected" : Path;
-        var method = string.IsNullOrEmpty(Method) ? "GET" : Method;
+        var resourceBase = String.IsNullOrEmpty(ResourceServer) ? ServerUrls.ResourceServer : ResourceServer;
+        var apiPath = String.IsNullOrEmpty(Path) ? "/api/protected" : Path;
+        var method = String.IsNullOrEmpty(Method) ? "GET" : Method;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.AccessToken is null)
@@ -218,9 +338,9 @@ public sealed class RefreshCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
-        var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
-        var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.RefreshToken is null)
@@ -301,9 +421,9 @@ public sealed class IntrospectCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
-        var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
-        var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.AccessToken is null)
@@ -364,9 +484,9 @@ public sealed class RevokeCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
-        var clientId = string.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
-        var clientSecret = string.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.AccessToken is null)
@@ -424,7 +544,7 @@ public sealed class UserInfoCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
 
         var store = TokenFile.Load(TokenFilePath);
         if (store?.AccessToken is null)
@@ -479,7 +599,7 @@ public sealed class DiscoveryCommand : ICommandHandler
 
     public async ValueTask ExecuteAsync(CommandContext context)
     {
-        var authBase = string.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
+        var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var url = $"{authBase.TrimEnd('/')}/.well-known/openid-configuration";
         Console.WriteLine($"Fetching discovery document from {url} ...");
 

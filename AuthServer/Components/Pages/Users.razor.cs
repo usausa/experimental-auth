@@ -27,7 +27,7 @@ public partial class Users
     private string searchText = string.Empty;
     private bool isLoading;
 
-    private IEnumerable<User> FilteredUsers => string.IsNullOrEmpty(searchText)
+    private IEnumerable<User> FilteredUsers => String.IsNullOrEmpty(searchText)
         ? users
         : users.Where(u =>
             u.Username.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||

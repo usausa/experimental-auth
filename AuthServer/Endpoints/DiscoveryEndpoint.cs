@@ -29,7 +29,9 @@ public static class DiscoveryEndpoint
         var doc = new
         {
             issuer,
+            authorization_endpoint = $"{issuer}/connect/authorize",
             token_endpoint = $"{issuer}/connect/token",
+            userinfo_endpoint = $"{issuer}/connect/userinfo",
             jwks_uri = $"{issuer}/.well-known/jwks.json",
             grant_types_supported = new[] { "client_credentials", "authorization_code", "refresh_token" },
             response_types_supported = new[] { "code" },

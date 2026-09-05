@@ -20,14 +20,14 @@ public static class PasswordHasher
 
     public static bool Verify(string secret, string hashed)
     {
-        if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(hashed))
+        if (String.IsNullOrEmpty(secret) || String.IsNullOrEmpty(hashed))
         {
             return false;
         }
 
         var parts = hashed.Split('.');
-        if (parts.Length != 3 ||
-            !int.TryParse(parts[0], out var iter) ||
+        if ((parts.Length != 3) ||
+            !Int32.TryParse(parts[0], out var iter) ||
             !TryFromBase64(parts[1], out var salt) ||
             !TryFromBase64(parts[2], out var expected))
         {

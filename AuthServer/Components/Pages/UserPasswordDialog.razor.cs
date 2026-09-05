@@ -28,7 +28,7 @@ public partial class UserPasswordDialog
 
     private async Task SaveAsync()
     {
-        if (string.IsNullOrWhiteSpace(newPassword))
+        if (String.IsNullOrWhiteSpace(newPassword))
         {
             Snackbar.Add("Password is required.", Severity.Warning);
             return;

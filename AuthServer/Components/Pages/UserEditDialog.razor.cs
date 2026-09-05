@@ -71,13 +71,13 @@ public partial class UserEditDialog
 
     private async Task SaveAsync()
     {
-        if (string.IsNullOrWhiteSpace(username))
+        if (String.IsNullOrWhiteSpace(username))
         {
             Snackbar.Add("Username is required.", Severity.Warning);
             return;
         }
 
-        if (IsNew && string.IsNullOrWhiteSpace(password))
+        if (IsNew && String.IsNullOrWhiteSpace(password))
         {
             Snackbar.Add("Password is required.", Severity.Warning);
             return;
@@ -95,10 +95,10 @@ public partial class UserEditDialog
             {
                 ResourceServerId = ResourceServerId,
                 Username = username.Trim(),
-                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
-                Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
-                GivenName = string.IsNullOrWhiteSpace(givenName) ? null : givenName.Trim(),
-                FamilyName = string.IsNullOrWhiteSpace(familyName) ? null : familyName.Trim(),
+                Email = String.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+                Name = String.IsNullOrWhiteSpace(name) ? null : name.Trim(),
+                GivenName = String.IsNullOrWhiteSpace(givenName) ? null : givenName.Trim(),
+                FamilyName = String.IsNullOrWhiteSpace(familyName) ? null : familyName.Trim(),
                 EmailVerified = emailVerified,
                 IsActive = isActive
             };
@@ -117,10 +117,10 @@ public partial class UserEditDialog
 
             existing.ResourceServerId = ResourceServerId;
             existing.Username = username.Trim();
-            existing.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
-            existing.Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
-            existing.GivenName = string.IsNullOrWhiteSpace(givenName) ? null : givenName.Trim();
-            existing.FamilyName = string.IsNullOrWhiteSpace(familyName) ? null : familyName.Trim();
+            existing.Email = String.IsNullOrWhiteSpace(email) ? null : email.Trim();
+            existing.Name = String.IsNullOrWhiteSpace(name) ? null : name.Trim();
+            existing.GivenName = String.IsNullOrWhiteSpace(givenName) ? null : givenName.Trim();
+            existing.FamilyName = String.IsNullOrWhiteSpace(familyName) ? null : familyName.Trim();
             existing.EmailVerified = emailVerified;
             existing.IsActive = isActive;
             await UserService.UpdateAsync(existing);

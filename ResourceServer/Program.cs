@@ -87,13 +87,13 @@ app.Run();
 static bool HasScope(System.Security.Claims.ClaimsPrincipal user, string required)
 {
     var scopeClaim = user.FindFirst("scope")?.Value;
-    if (string.IsNullOrEmpty(scopeClaim))
+    if (String.IsNullOrEmpty(scopeClaim))
     {
         return false;
     }
     foreach (var s in scopeClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries))
     {
-        if (string.Equals(s, required, StringComparison.Ordinal))
+        if (String.Equals(s, required, StringComparison.Ordinal))
         {
             return true;
         }

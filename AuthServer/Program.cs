@@ -42,6 +42,8 @@ builder.Services.AddSingleton<ClientService>();
 builder.Services.AddSingleton<ResourceServerService>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<UserService>();
+builder.Services.AddSingleton<AuthorizationCodeService>();
+builder.Services.AddSingleton<RefreshTokenService>();
 
 builder.Services.AddMudServices();
 
@@ -71,6 +73,8 @@ app.MapRazorComponents<App>()
 app.MapDiscoveryEndpoint();
 app.MapJwksEndpoint();
 app.MapTokenEndpoint();
+app.MapAuthorizeEndpoint();
+app.MapUserInfoEndpoint();
 
 app.MapDefaultEndpoints();
 

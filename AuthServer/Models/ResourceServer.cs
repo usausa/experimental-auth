@@ -1,6 +1,6 @@
 namespace AuthServer.Models;
 
-/// <summary>Resource server (API) registration record.</summary>
+// Resource server (API) registration record.
 public sealed class ResourceServer
 {
     public string ResourceServerId { get; set; } = default!;

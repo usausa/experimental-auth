@@ -11,10 +11,11 @@ using Dapper;
 using Microsoft.IdentityModel.Tokens;
 
 // RSA 署名鍵を SQLite に永続化し、JWT 署名と JWKS 公開で利用する
-public sealed class SigningKeyService
+public sealed class SigningKeyService : IDisposable
 {
     private readonly DbConnectionFactory dbFactory;
     private readonly Lock gate = new();
+    private RSA? signingRsa;
     private RsaSecurityKey? cachedKey;
     private string? cachedKid;
 
@@ -24,12 +25,23 @@ public sealed class SigningKeyService
         EnsureKeyExists();
     }
 
+    public void Dispose()
+    {
+        lock (gate)
+        {
+            signingRsa?.Dispose();
+            signingRsa = null;
+            cachedKey = null;
+            cachedKid = null;
+        }
+    }
+
     // ReSharper disable once UnusedTupleComponentInReturnValue
     public (RsaSecurityKey Key, string Kid) GetActiveKey()
     {
         lock (gate)
         {
-            if (cachedKey is null || cachedKid is null)
+            if ((cachedKey is null) || (cachedKid is null))
             {
                 LoadActiveKey();
             }
@@ -80,8 +92,16 @@ public sealed class SigningKeyService
             FROM signing_keys WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1
             """) ?? throw new InvalidOperationException("No active signing key.");
 
-        using var rsa = RSA.Create();
+        // RsaSecurityKey は RSA をコピーせず参照として保持するため、ローカルの using で破棄してはいけない。
+        // using を付けるとキャッシュ済みの鍵が破棄済みインスタンスを包み、署名時に
+        // ObjectDisposedException となってトークン発行が必ず失敗する。
+        // 所有権をフィールドに持たせ、Dispose でまとめて破棄する。
+        // (ExportParameters で値をコピーしてから破棄している JwksEndpoint とは扱いが異なる)
+        var rsa = RSA.Create();
         rsa.ImportFromPem(row.PrivateKeyPem);
+
+        signingRsa?.Dispose();
+        signingRsa = rsa;
         cachedKey = new RsaSecurityKey(rsa) { KeyId = row.Kid };
         cachedKid = row.Kid;
     }
