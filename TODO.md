@@ -1,6 +1,6 @@
 # 実装 TODO
 
-`__spec.md` の実装チェックリスト兼、本プロジェクトの唯一のバックログです。
+`SPEC.md` の実装チェックリスト兼、本プロジェクトの唯一のバックログです。
 完了済みは `[x]`、未着手は `[ ]` で管理します。
 
 *最終更新: 2026-09-05*
@@ -10,8 +10,10 @@
 ## 優先対応: コードレビュー指摘（未対応分）
 
 2026-08-06 のコードレビューで指摘され、まだ対応していない項目です。
-High「署名鍵の RSA インスタンスが破棄済みでトークン発行が必ず失敗する」は
-2026-09-05 に修正・実機検証済みのため本一覧から除外しています。
+以下は 2026-09-05 に対応済みのため本一覧から除外しています。
+
+- High「署名鍵の RSA インスタンスが破棄済みでトークン発行が必ず失敗する」— 修正・実機検証済み
+- 中「既知の脆弱性を持つパッケージへの依存」— ライブラリ更新により**ビルド警告 0 件**を達成
 
 ### 🟡 中: テストデータの投入が環境で分岐していない
 
@@ -27,20 +29,6 @@ High「署名鍵の RSA インスタンスが破棄済みでトークン発行�
 | ユーザー | `alice` | `password` |
 
 - [ ] `app.Environment.IsDevelopment()` での分岐、または設定フラグ（`Seed:Enabled`）で制御する
-
-### 🟡 中: 既知の脆弱性を持つパッケージへの依存
-
-Release ビルドで **28 件の警告**が出ており、`AGENTS.md` の「ビルド警告ゼロ」に違反した状態です。
-
-```
-NU1903: Microsoft.OpenApi 2.0.0            高 (GHSA-v5pm-xwqc-g5wc)  … AuthServer / ResourceServer
-NU1903: SQLitePCLRaw.lib.e_sqlite3 2.1.11  高 (GHSA-2m69-gcr7-jv3q)  … AuthServer
-NU1902/NU1903: MessagePack 2.5.192         中〜高（複数）             … AppHost
-```
-
-- [ ] `Microsoft.OpenApi` を更新する
-- [ ] `SQLitePCLRaw.lib.e_sqlite3` を更新する（`Experimental-Telemetry` と共通のため同時対応が効率的）
-- [ ] `MessagePack` を更新する（Aspire 経由の推移的依存）
 
 ### 🟡 中: グラントタイプの判定が JSON 文字列の部分一致
 
@@ -72,20 +60,20 @@ var requireHttps = jwt.GetValue("RequireHttpsMetadata", false);
 
 ## 仕様と実装の乖離
 
-- [ ] `/connect/authorize` を標準のブラウザリダイレクト方式（`__spec.md` §6.3 方式 A）で実装する
+- [ ] `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する
       現在は方式 B（API 専用・資格情報直送）のみ。方式 B は信頼モデルが ROPC 相当のため、
       同意画面・`prompt` パラメーター・外部 IdP 連携が成立しません
 - [ ] ID Token の `email_verified` が文字列 `"true"` で出力される（OIDC Core §5.1 では boolean）。
       UserInfo 側は boolean で返しており不整合
 - [ ] ID Token の有効期限がアクセストークンと同じ `AccessTokenLifetimeSeconds` を流用している
-- [ ] トークン有効期限が当初仕様と異なる（`__spec.md` SEC-07）。
+- [ ] トークン有効期限が当初仕様と異なる（`SPEC.md` SEC-07）。
       リフレッシュトークンは仕様 30 日に対し実装 1 日（86400 秒）、
       認可コードは仕様 10 分に対し実装 2 分（120 秒）。仕様と実装のどちらに寄せるか要判断
 - [ ] 認可コード再使用時に、そのコードから発行済みのトークンを失効させる処理が未実装
-      （`__spec.md` SEC-04）。現在は DELETE によるワンタイム化のみ
-- [ ] HTTPS 構成が未対応（`__spec.md` SEC-01）。現在は AuthServer / ResourceServer とも HTTP
-- [ ] レート制限が未実装（`__spec.md` SEC-09）。Token / Authorize エンドポイントのブルートフォース対策
-- [ ] CORS 設定が未実装（`__spec.md` SEC-10）
+      （`SPEC.md` SEC-04）。現在は DELETE によるワンタイム化のみ
+- [ ] HTTPS 構成が未対応（`SPEC.md` SEC-01）。現在は AuthServer / ResourceServer とも HTTP
+- [ ] レート制限が未実装（`SPEC.md` SEC-09）。Token / Authorize エンドポイントのブルートフォース対策
+- [ ] CORS 設定が未実装（`SPEC.md` SEC-10）
 
 ---
 
@@ -118,7 +106,7 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 
 ## Phase 2: Authorization Code Flow + PKCE
 
-`__spec.md` §6.3 の **方式 B（API 専用）** で実装済み。方式 A（標準リダイレクト）は未着手です。
+`SPEC.md` §6.3 の **方式 B（API 専用）** で実装済み。方式 A（標準リダイレクト）は未着手です。
 2026-09-05 に AuthServer を実起動して全項目を実機検証しました。
 
 - [x] MudBlazor 導入 (AuthServer に `MudBlazor` パッケージ追加 / MainLayout・NavMenu 更新)
@@ -204,7 +192,72 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 
 ---
 
+## Phase B: spec 範囲外の機能強化候補
+
+`__Other/FEATURE_ANALYSIS.md` の調査結果をもとにした、`SPEC.md` に含まれない機能の候補です。
+Phase 1〜5（spec 範囲）の完成後に着手する前提で、以下の 3 軸で優先度を付けています。
+
+| 軸 | 内容 |
+|----|------|
+| 学習価値 | RFC / OIDC 仕様の理解が深まるか。標準化された仕様か |
+| 現実的需要 | 実際の認証システムで広く使われているか |
+| 実装コスト | 現在のコードベースへの追加が現実的か |
+
+> `prompt` パラメーター・同意画面・外部 IdP 連携・Front-Channel Logout は、
+> いずれもブラウザリダイレクトとセッションが前提です。`SPEC.md` §6.3 の方式 A
+> （「仕様と実装の乖離」に計上）を先に実装しないと着手できません。
+
+### B-1. 最優先（学習価値・需要ともに高い）
+
+- [ ] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`jti` ベースのキャッシュでリプレイ攻撃を防ぐ。Phase 4 の失効リスト（`revoked_tokens`）に相乗りできる。コスト: 低
+- [ ] ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※方式 A 前提
+- [ ] ★★★ **Pairwise Subject Types** — OIDC Core §8。クライアントごとに異なる `sub` を返すプライバシー保護。コスト: 中
+- [ ] ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。コスト: 中
+- [ ] ★★☆ **複数署名アルゴリズム対応（ES256 等）** — RFC 7518。現在 RS256 固定。コスト: 中
+
+### B-2. 高優先（実際のシステムで頻出）
+
+- [ ] ★★☆ **Front-Channel Logout** — OIDC Front-Channel Logout 1.0。各 RP へ iframe でセッション終了を通知。コスト: 中 ※方式 A 前提
+- [ ] ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。コスト: 中
+- [ ] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。ID Token リプレイ対策（`state` の検証は Phase 2 に計上済み）。コスト: 低
+- [ ] ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※方式 A 前提
+- [ ] ★★☆ **監査ログ** — ログイン・トークン発行・失敗履歴の永続化。コスト: 低（テーブル追加）
+- [ ] ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。コスト: 中
+- [ ] ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。コスト: 中
+
+### B-3. 中優先（学習価値は高いが実装コストが大きい）
+
+- [ ] ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。コスト: 高
+- [ ] ★★☆ **DPoP** — RFC 9449。Bearer トークン盗難対策（所有証明）。コスト: 高
+- [ ] ★★☆ **Resource Indicators** — RFC 8707。複数リソースサーバー環境での `aud` 制限。コスト: 中
+- [ ] ★☆☆ **CIBA** — OpenID CIBA 1.0。スマートフォン承認フロー。コスト: 高
+- [ ] ★☆☆ **ユーザーグループ / ロール管理** — グループ単位のクレーム付与・アクセス制御。コスト: 中
+- [ ] ★☆☆ **カスタムクレーム管理 UI** — 管理者が任意クレームを定義・付与。コスト: 中
+- [ ] ★☆☆ **SCIM 2.0** — RFC 7642〜7644。ユーザープロビジョニング標準。コスト: 高
+
+### B-4. 対象外（実装しない）
+
+本プロジェクトの学習目的から外れるため、着手しない方針のものです。
+
+| 機能 | 理由 |
+|------|------|
+| SAML 2.0 / WS-Federation | レガシーエンタープライズ向け。目的との乖離が大きい |
+| Windows 統合認証 | 環境依存。クロスプラットフォーム志向に合わない |
+| LDAP 統合 | 別システム依存。本質的理解に直結しない |
+| Docker ラベル / Kubernetes 認証 | インフラ層の話で OAuth/OIDC の範囲外 |
+| Authlete SaaS 型 | 外部委譲はフルスクラッチ学習の趣旨に反する |
+| 複数 DB バックエンド | SQLite で十分。運用課題 |
+
+### 推奨着手順
+
+1. **方式 A（標準リダイレクトフロー）** — 「仕様と実装の乖離」参照。B-1 の `prompt`、同意画面、B-2 の外部 IdP はこれなしに始められない
+2. **`state` 厳密検証**（Phase 2）と **ID Token の `at_hash` / `auth_time` / `amr`**（Phase 3）— 方式 A と同時に入れられる
+3. **B-1 JWT Replay 検出** — Phase 4 の失効リストと組み合わせて低コスト
+4. 以降は B-1 → B-2 → B-3 の順
+
+---
+
 ## 参考
 
-- `__spec.md` — 実装仕様書。Phase ごとの設計と実装状況の概要
-- `__ENHANCEMENT_ROADMAP.md` — spec 範囲外の将来機能候補（Phase B 以降）
+- `SPEC.md` — 実装仕様書。Phase ごとの設計と実装状況の概要
+- `__Other/FEATURE_ANALYSIS.md` — Phase B の元になった機能調査

@@ -1,11 +1,17 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.2.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <CodeAnalysisRuleSet>..\Analyzers.ruleset</CodeAnalysisRuleSet>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
     <UserSecretsId>apphost-experimental-auth</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Transitive pin: GHSA-hv8m-jj95-wg3x -->
+    <PackageReference Include="MessagePack" Version="3.1.8" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AuthServer\AuthServer.csproj" />
