@@ -1,4 +1,7 @@
 #pragma warning disable IDE0130
+// Aspire の ServiceDefaults 規約に合わせ、AddServiceDefaults / MapDefaultEndpoints を
+// 呼び出し側で using なしに解決できるよう、あえてファイル位置と異なる名前空間を使用する。
+// ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Hosting;
 
 using Microsoft.AspNetCore.Builder;

@@ -19,7 +19,7 @@ public static class ProtectedEndpoint
             .RequireAuthorization("api.read")
             .WithSummary("保護されたリソースの取得")
             .WithDescription("スコープ `api.read` を持つ有効な Bearer トークンが必要です。")
-            .Produces<object>(StatusCodes.Status200OK)
+            .Produces<object>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .AddOpenApiOperationTransformer((op, _, _) =>
@@ -33,7 +33,7 @@ public static class ProtectedEndpoint
             .RequireAuthorization("api.write")
             .WithSummary("管理者専用リソースの取得")
             .WithDescription("スコープ `api.write` を持つ有効な Bearer トークンが必要です。")
-            .Produces<object>(StatusCodes.Status200OK)
+            .Produces<object>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .AddOpenApiOperationTransformer((op, _, _) =>

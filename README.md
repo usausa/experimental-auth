@@ -213,6 +213,13 @@ dotnet run -- api \
 | `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
+> **`/connect/authorize` の設計について**
+> 本サーバーは API 専用サーバーとして実装しているため、`/connect/authorize` は
+> 標準のブラウザリダイレクト方式(GET)ではなく、クライアントが資格情報を直接送信する
+> POST 方式のみを提供しています。この方式ではユーザーのパスワードがクライアントを
+> 経由するため、信頼モデルとしては ROPC 相当です。
+> 標準方式との差異は `__spec.md` §6.3 を参照してください。
+
 ---
 
 ## 実装仕様と実装状況
@@ -231,12 +238,14 @@ dotnet run -- api \
 | ResourceServer JWT Bearer 認証 | RFC 6750 | 標準 | ✅ 実装済み | 1 |
 | スコープベースの認可 | RFC 6749 §3.3 | 標準 | ✅ 実装済み | 1 |
 | ユーザー管理 UI (MudBlazor) | — | — | ✅ 実装済み | 2 |
-| Authorization Endpoint (API) | RFC 6749 §3.1 | 必須 | ✅ 実装済み | 2 |
-| Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | ✅ 実装済み | 2 |
-| PKCE | RFC 7636 | 現在必須 | ✅ 実装済み | 2 |
-| Refresh Token | RFC 6749 §6 | 標準 | ✅ 実装済み | 2 |
-| ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | ✅ 実装済み | 2 |
+| Authorization Endpoint (API 専用 POST) | RFC 6749 §3.1 | 必須 | ✅ 実装済み | 2 |
+| Authorization Endpoint (標準リダイレクト GET) | RFC 6749 §3.1 | 現在の標準 | 🔲 未実装 | 2 |
+| Authorization Code Flow | RFC 6749 §4.1 | 現在の標準フロー | 🟡 API 専用方式のみ | 2 |
+| PKCE (S256) | RFC 7636 | 現在必須 | ✅ 実装済み | 2 |
+| Refresh Token (ローテーションあり) | RFC 6749 §6 | 標準 | ✅ 実装済み | 2 |
+| ID Token 生成 | OIDC Core 1.0 §2 | OIDC 必須 | 🟡 `at_hash` / `auth_time` / `amr` 未実装 | 2 |
 | UserInfo エンドポイント | OIDC Core 1.0 §5.3 | OIDC 必須 | ✅ 実装済み | 2 |
+| 同意画面 / 同意情報管理 | OIDC Core 1.0 §3.1.2 | 標準 | 🔲 未実装 | 3 |
 | Token Revocation | RFC 7009 | 広く実装 | 🔲 未実装 | 4 |
 | Token Introspection | RFC 7662 | 広く実装 | 🔲 未実装 | 4 |
 | RP-Initiated Logout | OIDC RP-Logout 1.0 | 標準 | 🔲 未実装 | 4 |
