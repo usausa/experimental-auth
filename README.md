@@ -44,6 +44,7 @@ dotnet run -- <command> [options]
 | `userinfo` | UserInfo エンドポイントからユーザー情報を取得する |
 | `introspect` | 保存済みトークン（access / refresh）の状態を検査する |
 | `revoke` | 保存済みトークンを失効させる（既定は access / refresh の両方） |
+| `device` | Device Authorization Grant でトークンを取得する（コードを別のブラウザで承認） |
 
 ### ユースケース別使用例
 
@@ -153,6 +154,22 @@ dotnet run -- api \
   --token-file /tmp/tokens-env-a.json
 ```
 
+#### ユースケース 5: 入力制約デバイス・CLI(device_code)
+
+ブラウザを持たないデバイスや CLI が、別のデバイスのブラウザでユーザーに承認してもらうフローです(RFC 8628)。
+`test-device` は公開クライアント(シークレットなし)です。
+
+```bash
+# 1. デバイス認可を要求すると user_code と承認 URL が表示され、承認されるまでポーリングします
+dotnet run -- device --scope "openid profile email api.read"
+
+# 2. 表示された URL (http://localhost:5080/account/device?user_code=XXXX-XXXX) をブラウザで開き、
+#    alice / password でサインインして Approve を押す。CLI 側がトークンを受け取ってファイルに保存します
+
+# 3. 取得したアクセストークンで保護 API を呼び出す
+dotnet run -- api --resource http://localhost:5180 --path /api/protected
+```
+
 ### 各コマンドのオプション一覧
 
 #### `token`
@@ -166,6 +183,7 @@ dotnet run -- api \
 | `--scope` | `-s` | `api.read api.write` | スコープ(スペース区切り) |
 | `--username` | `-u` | — | ユーザー名(`authorization_code` グラント用) |
 | `--password` | `-p` | — | パスワード(`authorization_code` グラント用) |
+| `--resource` | — | — | Resource Indicator(RFC 8707)。対象リソースサーバーの audience URI。省略時は既定のリソースサーバー |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
 
 #### `api`
@@ -184,6 +202,7 @@ dotnet run -- api \
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--resource` | — | — | 元の付与範囲内で audience を絞り込む(RFC 8707 §2.2)。範囲外は `invalid_target` |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
 
 #### `introspect` / `revoke`
@@ -203,6 +222,16 @@ dotnet run -- api \
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス(`userinfo` のみ) |
 
+#### `device`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--client-id` | — | `test-device` | クライアント ID(既定は公開クライアント) |
+| `--client-secret` | — | — | クライアントシークレット(機密クライアントの場合のみ) |
+| `--scope` | `-s` | `openid profile email api.read` | スコープ(スペース区切り) |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
+
 ### トークンの保存場所
 
 取得したトークンは `~/.testclient/tokens.json` に保存されます。各コマンドはこのファイルを参照してトークンを利用します。
@@ -221,7 +250,8 @@ dotnet run -- api \
 | `/connect/revoke` | POST | ✅ 実装済み | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
 | `/connect/introspect` | POST | ✅ 実装済み | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
 | `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄) |
-| `/connect/device_authorization` | POST | 🔲 未実装 | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628) |
+| `/connect/device/authorize` | POST | ✅ 実装済み | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628)。`device_code` / `user_code` / `verification_uri` を返す |
+| `/account/device` | Blazor | ✅ 実装済み | 5 | 🖥️ デバイスコードの承認画面(user_code + ユーザー認証、Approve / Deny) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
 > **`/connect/authorize` の設計について**
@@ -235,7 +265,7 @@ dotnet run -- api \
 > `/connect/revoke` で失効させたアクセストークンは、AuthServer 自身のエンドポイント（UserInfo / Introspection）では
 > 直ちに拒否されますが、ResourceServer はオフラインで署名検証するだけなので有効期限まで受理し続けます。
 > セッションを確実に終わらせたい場合はリフレッシュトークンを失効させ、アクセストークンの有効期限を短く保ってください。
-> 詳細は `SPEC.md` §6.5 を参照してください。
+> 詳細は `SPEC.md` §6.5 を参照してください。トークン有効期限の既定値(アクセストークン 15 分など)と根拠は `SPEC.md` §8.3 にあります。
 
 ---
 
@@ -266,8 +296,10 @@ dotnet run -- api \
 | Token Revocation | RFC 7009 | 広く実装 | ✅ 実装済み | 4 |
 | Token Introspection | RFC 7662 | 広く実装 | ✅ 実装済み | 4 |
 | RP-Initiated Logout | OIDC RP-Logout 1.0 | 標準 | 🔲 未実装 | 4 |
-| 鍵ローテーション | RFC 7517 | 推奨 | ✅ 実装済み | 4 |
-| Device Authorization Grant | RFC 8628 | CLI/IoT 向け標準 | 🔲 未実装 | 5 |
+| 鍵ローテーション(事前公開つき 2 段階) | RFC 7517 | 推奨 | ✅ 実装済み | 4 |
+| 複数署名アルゴリズム(RS256 / ES256) | RFC 7518 | 標準 | ✅ 実装済み | B |
+| Resource Indicators | RFC 8707 | マイクロサービス向け | ✅ 実装済み(トークン要求時) | B |
+| Device Authorization Grant | RFC 8628 | CLI/IoT 向け標準 | ✅ 実装済み | 5 |
 | Dynamic Client Registration | RFC 7591 / 7592 | SaaS 向け標準 | 🔲 未実装 | 5 |
 
 ### spec 範囲外の拡張機能(実装予定なし / 参考)
@@ -281,7 +313,6 @@ dotnet run -- api \
 | Pairwise Subject Types | OIDC Core §8 | プライバシー保護 |
 | Front-Channel Logout | OIDC Front-Channel Logout 1.0 | セッション管理拡張 |
 | Back-Channel Logout | OIDC Back-Channel Logout 1.0 | セッション管理拡張 |
-| Resource Indicators | RFC 8707 | マイクロサービス向け |
 | TOTP / MFA | RFC 6238 / 4226 | 認証強化 |
 | Passkey / WebAuthn | W3C WebAuthn Level 2 | パスワードレス認証 |
 | SAML 2.0 / WS-Federation | SAML 2.0 Core | レガシーエンタープライズ統合 |

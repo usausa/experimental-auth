@@ -58,6 +58,7 @@ builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<AuthorizationCodeService>();
 builder.Services.AddSingleton<RefreshTokenService>();
 builder.Services.AddSingleton<RevokedTokenService>();
+builder.Services.AddSingleton<DeviceCodeService>();
 
 // 期限切れデータのクリーンアップと鍵の自動ローテーション。
 // 保守ジョブの例外でホスト全体が停止しないようにする (例外はホストがログに記録する)。
@@ -99,6 +100,7 @@ app.MapAuthorizeEndpoint();
 app.MapUserInfoEndpoint();
 app.MapRevocationEndpoint();
 app.MapIntrospectionEndpoint();
+app.MapDeviceAuthorizationEndpoint();
 
 app.MapDefaultEndpoints();
 

@@ -22,6 +22,7 @@ builder.ConfigureCommands(commands =>
     commands.AddCommand<UserInfoCommand>();
     commands.AddCommand<IntrospectCommand>();
     commands.AddCommand<RevokeCommand>();
+    commands.AddCommand<DeviceCommand>();
 });
 
 var host = builder.Build();

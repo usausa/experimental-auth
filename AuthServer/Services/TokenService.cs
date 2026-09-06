@@ -17,9 +17,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 
     private readonly AuthServerOptions options = options.Value;
 
-    public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, string audience)
+    public AccessTokenResult IssueClientCredentialsToken(string clientId, string scopes, IReadOnlyList<string> audiences)
     {
-        var (key, _) = keyService.GetActiveKey();
+        var signingKey = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
         var expires = now.AddSeconds(options.AccessTokenLifetimeSeconds);
 
@@ -34,14 +34,15 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = options.Issuer,
-            Audience = audience,
             IssuedAt = now,
             NotBefore = now,
             Expires = expires,
             Subject = new ClaimsIdentity(claims),
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256),
+            SigningCredentials = new SigningCredentials(signingKey.Key, signingKey.SigningAlgorithm),
             TokenType = "at+jwt"
         };
+
+        ApplyAudiences(descriptor, audiences);
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         var token = handler.CreateToken(descriptor);
@@ -49,9 +50,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
     }
 
     // Authorization Code Flow 用のアクセストークンを発行する。
-    public AccessTokenResult IssueAuthorizationCodeToken(string clientId, string userId, string username, string scopes, string audience)
+    public AccessTokenResult IssueAuthorizationCodeToken(string clientId, string userId, string username, string scopes, IReadOnlyList<string> audiences)
     {
-        var (key, _) = keyService.GetActiveKey();
+        var signingKey = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
         var expires = now.AddSeconds(options.AccessTokenLifetimeSeconds);
 
@@ -67,14 +68,15 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = options.Issuer,
-            Audience = audience,
             IssuedAt = now,
             NotBefore = now,
             Expires = expires,
             Subject = new ClaimsIdentity(claims),
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256),
+            SigningCredentials = new SigningCredentials(signingKey.Key, signingKey.SigningAlgorithm),
             TokenType = "at+jwt"
         };
+
+        ApplyAudiences(descriptor, audiences);
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         var token = handler.CreateToken(descriptor);
@@ -85,7 +87,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
     // authTime はユーザー認証時刻 (auth_time)、accessToken を渡すと at_hash (OIDC Core §3.1.3.6) を付与する。
     public string IssueIdToken(string clientId, string userId, User user, string? nonce, string[] grantedScopes, DateTime authTime, string? accessToken)
     {
-        var (key, _) = keyService.GetActiveKey();
+        var signingKey = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
 
         var claims = new List<Claim>
@@ -150,9 +152,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             Expires = now.AddSeconds(options.IdTokenLifetimeSeconds),
             Subject = new ClaimsIdentity(claims),
             Claims = typedClaims,
-            // kid は SigningCredentials の RsaSecurityKey.KeyId から自動的にヘッダーへ付与される。
+            // kid は SigningCredentials の SecurityKey.KeyId から自動的にヘッダーへ付与される。
             // AdditionalHeaderClaims で kid を渡すと IDX14116 で発行に失敗するため指定しない。
-            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256)
+            SigningCredentials = new SigningCredentials(signingKey.Key, signingKey.SigningAlgorithm)
         };
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
@@ -164,12 +166,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
     // 失効リストの照合は呼び出し側 (UserInfo / Introspection) で行う。
     public async Task<AccessTokenClaims?> ValidateAccessTokenAsync(string token)
     {
-        var securityKeys = keyService.GetAllActiveKeys().Select(k =>
-        {
-            using var rsa = RSA.Create();
-            rsa.ImportFromPem(k.PublicKeyPem);
-            return (SecurityKey)new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = k.Kid };
-        }).ToList();
+        var securityKeys = keyService.GetValidationKeys();
 
         var handler = new JsonWebTokenHandler();
         var parameters = new TokenValidationParameters
@@ -202,13 +199,27 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
             identity.FindFirst("client_id")?.Value ?? String.Empty,
             identity.FindFirst("scope")?.Value ?? String.Empty,
             identity.FindFirst("username")?.Value,
-            jwt.Audiences.FirstOrDefault() ?? String.Empty,
+            jwt.Audiences.ToList(),
             jwt.IssuedAt,
             jwt.ValidFrom,
             jwt.ValidTo);
     }
 
-    // at_hash: アクセストークンの ASCII 表現を alg 対応のハッシュ (RS256 → SHA-256) にかけ、
+    // RFC 8707: audience が 1 つなら aud は文字列、複数なら配列で出力する (RFC 7519 §4.1.3)。
+    // 配列は Claims ディクショナリ経由で型を保って出力する。
+    private static void ApplyAudiences(SecurityTokenDescriptor descriptor, IReadOnlyList<string> audiences)
+    {
+        if (audiences.Count == 1)
+        {
+            descriptor.Audience = audiences[0];
+        }
+        else
+        {
+            descriptor.Claims = new Dictionary<string, object> { ["aud"] = audiences.ToArray() };
+        }
+    }
+
+    // at_hash: アクセストークンの ASCII 表現を alg 対応のハッシュ (RS256 / ES256 はいずれも SHA-256) にかけ、
     // 左半分 (128bit) を base64url 化した値 (OIDC Core §3.1.3.6)。
     private static string ComputeAtHash(string accessToken)
     {
@@ -225,7 +236,7 @@ public sealed record AccessTokenClaims(
     string ClientId,
     string Scope,
     string? Username,
-    string Audience,
+    IReadOnlyList<string> Audiences,
     DateTime IssuedAt,
     DateTime NotBefore,
     DateTime ExpiresAt);

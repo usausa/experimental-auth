@@ -123,7 +123,15 @@ public static class DatabaseInitializer
         // v1: 認可コードの消費時刻。DELETE ではなく消費済みマークにし、再提示 (漏洩の疑い) を検知する (RFC 6749 §4.1.2)
         (1, "ALTER TABLE authorization_codes ADD COLUMN consumed_at TEXT"),
         // v2: リフレッシュトークンの発行元認可コード。認可コード再使用・RT リプレイ時に同一ファミリーをまとめて失効させる
-        (2, "ALTER TABLE refresh_tokens ADD COLUMN source_code_hash TEXT")
+        (2, "ALTER TABLE refresh_tokens ADD COLUMN source_code_hash TEXT"),
+        // v3: 署名鍵の有効化時刻。JWKS に先行公開してから署名に使い始める 2 段階ローテーション用
+        (3, "ALTER TABLE signing_keys ADD COLUMN activates_at TEXT"),
+        // v4: リフレッシュトークンのファミリー絶対期限。ローテーションでは延びない上限
+        (4, "ALTER TABLE refresh_tokens ADD COLUMN family_expires_at TEXT"),
+        // v5: リフレッシュトークンに紐づく audience (JSON 配列)。refresh 時に resource を省略しても同じ audience を維持する (RFC 8707)
+        (5, "ALTER TABLE refresh_tokens ADD COLUMN audiences TEXT"),
+        // v6: デバイスコードの承認時刻 (ID Token の auth_time に使用)
+        (6, "ALTER TABLE device_codes ADD COLUMN authorized_at TEXT")
     ];
 
     public static void Initialize(DbConnectionFactory factory)

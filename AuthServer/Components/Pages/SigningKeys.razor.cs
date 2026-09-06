@@ -10,6 +10,14 @@ using MudBlazor;
 
 public partial class SigningKeys
 {
+    private enum KeyStatus
+    {
+        Pending,
+        Current,
+        Grace,
+        Retired
+    }
+
     [Inject]
     public SigningKeyService SigningKeyService { get; set; } = default!;
 
@@ -24,10 +32,17 @@ public partial class SigningKeys
 
     private List<SigningKey> keys = [];
     private bool isLoading;
+    private string algorithm = SigningKeyService.Rs256;
 
     private int GraceDays => Options.Value.SigningKeyGraceDays;
 
-    protected override void OnInitialized() => Load();
+    private int PrePublishSeconds => Options.Value.SigningKeyPrePublishSeconds;
+
+    protected override void OnInitialized()
+    {
+        algorithm = Options.Value.SigningKeyAlgorithm;
+        Load();
+    }
 
     private void Load()
     {
@@ -36,26 +51,66 @@ public partial class SigningKeys
         isLoading = false;
     }
 
-    private async Task RotateAsync()
+    private async Task ScheduleAsync()
     {
         var confirmed = await DialogService.ShowMessageBoxAsync(
-            "Rotate Signing Key",
-            $"Generate a new signing key now? The current key will stay valid for {GraceDays} day(s) and then retire.",
+            "Schedule Key Rotation",
+            $"Publish a new {algorithm} key in JWKS now and start signing with it in {PrePublishSeconds} seconds?",
+            yesText: "Schedule",
+            cancelText: "Cancel");
+        if (confirmed is true)
+        {
+            var kid = SigningKeyService.ScheduleRotation(algorithm);
+            Snackbar.Add($"Rotation scheduled. Pending kid: {kid}", Severity.Success);
+            Load();
+        }
+    }
+
+    private async Task RotateNowAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Rotate Signing Key Now",
+            $"Generate a new {algorithm} key and start signing with it immediately? The current key will stay valid for {GraceDays} day(s) and then retire.",
             yesText: "Rotate",
             cancelText: "Cancel");
         if (confirmed is true)
         {
-            var kid = SigningKeyService.RotateKey(TimeSpan.FromDays(GraceDays));
+            var kid = SigningKeyService.RotateKey(algorithm);
             Snackbar.Add($"Signing key rotated. New kid: {kid}", Severity.Success);
             Load();
         }
     }
 
-    private static bool IsCurrent(SigningKey key) => key.IsActive && (key.ExpiresAt is null);
+    private static KeyStatus GetStatus(SigningKey key)
+    {
+        if (!key.IsActive)
+        {
+            return KeyStatus.Retired;
+        }
 
-    private static string GetStatus(SigningKey key) =>
-        !key.IsActive ? "Retired" : key.ExpiresAt is null ? "Current" : "Grace period";
+        if (key.ExpiresAt is not null)
+        {
+            return KeyStatus.Grace;
+        }
 
-    private static Color GetStatusColor(SigningKey key) =>
-        !key.IsActive ? Color.Default : key.ExpiresAt is null ? Color.Success : Color.Warning;
+        return (key.ActivatesAt is not null) && (key.ActivatesAt.Value.ToUniversalTime() > DateTime.UtcNow)
+            ? KeyStatus.Pending
+            : KeyStatus.Current;
+    }
+
+    private static string GetStatusText(SigningKey key) => GetStatus(key) switch
+    {
+        KeyStatus.Pending => "Pending",
+        KeyStatus.Current => "Current",
+        KeyStatus.Grace => "Grace period",
+        _ => "Retired"
+    };
+
+    private static Color GetStatusColor(SigningKey key) => GetStatus(key) switch
+    {
+        KeyStatus.Pending => Color.Info,
+        KeyStatus.Current => Color.Success,
+        KeyStatus.Grace => Color.Warning,
+        _ => Color.Default
+    };
 }

@@ -3,6 +3,11 @@
 `SPEC.md` の実装チェックリスト兼、本プロジェクトの唯一のバックログです。
 完了済みは `[x]`、未着手は `[ ]` で管理します。
 
+凡例:
+
+- 🌐 = **ブラウザリダイレクト（方式 A / M3）が前提**。リダイレクトフローとサーバー側セッションがないと成立しない
+- 🖥️ = エンドユーザー向けのブラウザ画面は必要だが、リダイレクトフロー・セッションは不要（API-only のマイルストーンでも実装できる）
+
 *最終更新: 2026-09-05*
 
 ---
@@ -14,8 +19,9 @@
 | M | 内容 | 状態 |
 |---|------|------|
 | M1 | トークンライフサイクル（Phase 4 前半）: `/connect/revoke`・`/connect/introspect`・JTI 失効リスト・SEC-04 ファミリー失効・スキーママイグレーション機構・鍵ローテーション・クリーンアップジョブ・TestClient `revoke` / `introspect` | ✅ 完了（2026-09-05） |
-| M2 | API-only 候補の一部（Phase B から選択）: Device Authorization Grant、Resource Indicators + ES256、DPoP、Dynamic Client Registration、監査ログ / レート制限、鍵の事前公開（2 段階ローテーション） | 🔲 次 |
-| M3 | ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 M2 の後 |
+| M2 | API-only 候補の一部: 鍵の事前公開（2 段階ローテーション）、Device Authorization Grant（承認画面 🖥️ + TestClient `device`）、Resource Indicators（RFC 8707、トークン要求時）、ES256、トークン有効期限の全設定化と推奨値（`SPEC.md` §8.3） | ✅ 完了（2026-09-05） |
+| M2' | M2 で見送った API-only 候補: DPoP、Dynamic Client Registration + Clients 管理画面、監査ログ / レート制限 | 🔲 M3 の後で必要なら |
+| M3 | 🌐 ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 次 |
 
 **アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
 失効はリフレッシュトークンに対して確実に効かせ、アクセストークンは短寿命で対処する。
@@ -39,13 +45,9 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 
 ## 仕様と実装の乖離
 
-- [ ] `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する
+- [ ] 🌐 `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する ※M3
       現在は方式 B（API 専用・資格情報直送）のみ。方式 B は信頼モデルが ROPC 相当のため、
       同意画面・`prompt` パラメーター・外部 IdP 連携が成立しません
-- [ ] トークン有効期限が当初仕様と異なる（`SPEC.md` SEC-07）。
-      リフレッシュトークンは仕様 30 日に対し実装 1 日（86400 秒）、
-      認可コードは仕様 10 分に対し実装 2 分（120 秒）。仕様と実装のどちらに寄せるか要判断。
-      方式 3 ではアクセストークンの有効期限（現在 3600 秒）が失効の反映遅延そのものになるため、短縮も含めて判断する
 - [ ] HTTPS 構成が未対応（`SPEC.md` SEC-01）。現在は AuthServer / ResourceServer とも HTTP。
       ResourceServer の `RequireHttpsMetadata` は既定 `true` に変更済み（Development のみ `false`）
 - [ ] レート制限が未実装（`SPEC.md` SEC-09）。Token / Authorize エンドポイントのブルートフォース対策
@@ -105,8 +107,8 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] 結合テスト: Authorization Code Flow 全体フロー
 - [x] 結合テスト: PKCE 不一致で拒否確認（`invalid_grant`）
 - [x] 結合テスト: 認可コード再利用で拒否確認（`invalid_grant`）
-- [ ] `/connect/authorize` の GET（ブラウザリダイレクト）実装 ※方式 A
-- [ ] `/account/login` Blazor ページ実装 ※方式 A
+- [ ] 🌐 `/connect/authorize` の GET（ブラウザリダイレクト）実装 ※M3
+- [ ] 🌐 `/account/login` Blazor ページ実装 ※M3
 - [x] `state` の検証（サーバーは保存・返却、TestClient が送信値との一致を検証。方式 A では redirect 先で同様に検証する）
 
 ## Phase 3: OIDC 準拠
@@ -122,14 +124,14 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 結合テスト: UserInfo レスポンス検証
 - [x] ID Token に `at_hash`, `auth_time`, `amr` を追加（`email_verified` も boolean 化、有効期限は `IdTokenLifetimeSeconds` に分離）
 - [x] Discovery メタデータ拡張（`claims_supported`, `subject_types_supported`, `request_uri_parameter_supported`）
-- [ ] Discovery に `response_modes_supported` を追加 ※方式 A 実装後（方式 B に該当する標準値がない）
-- [ ] Dapper による同意情報データアクセス実装
-- [ ] `/account/consent` Blazor ページ実装 ※方式 A が前提
-- [ ] 同意済みスコープの DB 保存・参照
-- [ ] 同意済みの場合は同意画面スキップ
+- [ ] 🌐 Discovery に `response_modes_supported` を追加 ※M3（方式 B に該当する標準値がない）
+- [ ] 🌐 Dapper による同意情報データアクセス実装 ※M3
+- [ ] 🌐 `/account/consent` Blazor ページ実装 ※M3
+- [ ] 🌐 同意済みスコープの DB 保存・参照 ※M3
+- [ ] 🌐 同意済みの場合は同意画面スキップ ※M3
 - [x] TestClient: ID Token のデコード・表示（`token` コマンドがペイロードのクレームを一覧表示）
 - [x] 結合テスト: ID Token クレーム検証（各クレームの JSON 型、`at_hash` の独立計算との一致を確認）
-- [ ] 結合テスト: 同意フロー動作確認
+- [ ] 🌐 結合テスト: 同意フロー動作確認 ※M3
 
 ## Phase 4: 運用機能
 
@@ -152,35 +154,37 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 結合テスト: 失効後は AuthServer（UserInfo / Introspection）が拒否し、ResourceServer は有効期限まで受理する（方式 3 の想定どおり）
 - [x] 結合テスト: イントロスペクション応答確認（AT / RT / 失効済み / 不正 / ID Token は inactive）
 - [x] 結合テスト: 鍵ローテーション後のトークン検証確認（旧鍵のトークンは猶予期間中受理。新鍵のトークンは JwtBearer の既定動作で最初の 1 要求のみ 401、JWKS 再取得後は受理）
-- [ ] 鍵の事前公開（2 段階ローテーション: 新鍵を JWKS に先行公開し、`JwksCacheMaxAgeSeconds` 経過後に署名を切り替えて直後の 401 をなくす） ※M2 候補
-- [ ] `/connect/logout` 実装 ※M3（方式 A）
-- [ ] セッション管理（Cookie ベース） ※M3
-- [ ] Blazor ログアウト確認画面 ※M3
-- [ ] TestClient: ログアウト実装 ※M3
+- [x] 鍵の事前公開（2 段階ローテーション。管理画面の Schedule Rotation / `SigningKeyPrePublishSeconds`。M2 で実測: 事前公開期間中に JWKS を取得済みの ResourceServer は新鍵の最初の要求から 200）
+- [x] 署名アルゴリズムの選択（RS256 / ES256。JWKS に EC 鍵を `crv` / `x` / `y` で公開、`SigningKeyAlgorithm` で既定を指定）
+- [x] ResourceServer の JWKS 自動再取得間隔を設定化（`Jwt:JwksRefreshSeconds`、既定 1800。事前公開期間以下にする）
+- [ ] 🌐 `/connect/logout` 実装 ※M3
+- [ ] 🌐 セッション管理（Cookie ベース） ※M3
+- [ ] 🌐 Blazor ログアウト確認画面 ※M3
+- [ ] 🌐 TestClient: ログアウト実装 ※M3
 
 ## Phase 5: 拡張機能
 
-- [ ] Dapper によるデバイスコードデータアクセス実装
-- [ ] `/connect/device/authorize` 実装
-- [ ] `/account/device` Blazor ページ実装（コード入力・認証）
-- [ ] デバイスフローポーリング処理（`authorization_pending`, `slow_down`）
+- [x] Dapper によるデバイスコードデータアクセス実装 (`Services/DeviceCodeService.cs`)
+- [x] `/connect/device/authorize` 実装 (`Endpoints/DeviceAuthorizationEndpoint.cs`。公開クライアント `test-device` を seed に追加)
+- [x] 🖥️ `/account/device` Blazor ページ実装（`Pages/DeviceActivation.razor`、`PublicLayout`。単一フォームで完結し、リダイレクトもセッションも不要）
+- [x] デバイスフローポーリング処理（`authorization_pending`, `slow_down`, `access_denied`, `expired_token`。承認後の交換は 1 回のみ）
 - [ ] `/connect/register` 実装（クライアント動的登録）
 - [ ] `/connect/register/{client_id}` CRUD 実装
-- [ ] `/account/register` Blazor ページ実装（ユーザー登録）
-- [ ] `/account/password` Blazor ページ実装（パスワード変更）
-- [ ] `/account/password-reset` Blazor ページ実装（パスワードリセット）
-- [ ] `/account/consents` Blazor ページ実装（同意管理・取り消し）
-- [ ] TestClient: デバイスフロー実装
-- [ ] 結合テスト: デバイスフロー全体フロー
+- [ ] 🖥️ `/account/register` Blazor ページ実装（ユーザー登録）
+- [ ] 🖥️ `/account/password` Blazor ページ実装（パスワード変更。現在のパスワード入力で認証し、セッションは不要）
+- [ ] 🖥️ `/account/password-reset` Blazor ページ実装（パスワードリセット。メール送信基盤が別途必要）
+- [ ] 🌐 `/account/consents` Blazor ページ実装（同意管理・取り消し） ※M3（同意機能が前提）
+- [x] TestClient: デバイスフロー実装（`device` コマンド。`slow_down` で間隔を +5 秒）
+- [x] 🖥️ 結合テスト: デバイスフロー全体フロー（2026-09-05 実機確認: ブラウザで承認 → TestClient がトークン取得 → ResourceServer 200。`slow_down` / 他クライアントの拒否も確認）
 - [ ] 結合テスト: クライアント動的登録・管理
-- [ ] 結合テスト: ユーザー登録・パスワード変更
+- [ ] 🖥️ 結合テスト: ユーザー登録・パスワード変更
 
 ---
 
 ## Phase B: spec 範囲外の機能強化候補
 
 `__Other/FEATURE_ANALYSIS.md` の調査結果をもとにした、`SPEC.md` に含まれない機能の候補です。
-M2 ではこの中から一部を選んで実装します（方式 A が前提のものは M3 以降）。優先度は以下の 3 軸で付けています。
+M2 で ES256 と Resource Indicators を実装しました。残りは M3（方式 A）の後に必要なものを選びます。優先度は以下の 3 軸で付けています。
 
 | 軸 | 内容 |
 |----|------|
@@ -188,33 +192,34 @@ M2 ではこの中から一部を選んで実装します（方式 A が前提�
 | 現実的需要 | 実際の認証システムで広く使われているか |
 | 実装コスト | 現在のコードベースへの追加が現実的か |
 
-> `prompt` パラメーター・同意画面・外部 IdP 連携・Front-Channel Logout は、
-> いずれもブラウザリダイレクトとセッションが前提です。`SPEC.md` §6.3 の方式 A
-> （「仕様と実装の乖離」に計上）を先に実装しないと着手できません。
+> 🌐 を付けた項目（`prompt`、PAR、JAR、外部 IdP、Front-Channel / Back-Channel Logout）は、
+> ブラウザリダイレクトとサーバー側セッションが前提です。`SPEC.md` §6.3 の方式 A（M3）を先に実装しないと着手できません。
+> 🖥️ の項目は画面が必要ですが、リダイレクトフローには依存しないため M2 でも実装できます。
 
 ### B-1. 最優先（学習価値・需要ともに高い）
 
 - [ ] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`jti` ベースのキャッシュでリプレイ攻撃を防ぐ。Phase 4 の失効リスト（`revoked_tokens`）に相乗りできる。コスト: 低
-- [ ] ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※方式 A 前提
+- [ ] 🌐 ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※M3
 - [ ] ★★★ **Pairwise Subject Types** — OIDC Core §8。クライアントごとに異なる `sub` を返すプライバシー保護。コスト: 中
-- [ ] ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。コスト: 中
-- [ ] ★★☆ **複数署名アルゴリズム対応（ES256 等）** — RFC 7518。現在 RS256 固定。コスト: 中
+- [ ] 🌐 ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。リダイレクト型の認可要求を保護する仕様のため方式 A が前提。コスト: 中 ※M3
+- [x] ★★☆ **複数署名アルゴリズム対応（ES256）** — RFC 7518。管理画面でローテーション時に RS256 / ES256 を選択。JWKS・検証・Discovery を対応（M2）
 
 ### B-2. 高優先（実際のシステムで頻出）
 
-- [ ] ★★☆ **Front-Channel Logout** — OIDC Front-Channel Logout 1.0。各 RP へ iframe でセッション終了を通知。コスト: 中 ※方式 A 前提
-- [ ] ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。コスト: 中
+- [ ] 🌐 ★★☆ **Front-Channel Logout** — OIDC Front-Channel Logout 1.0。各 RP へ iframe でセッション終了を通知。コスト: 中 ※M3
+- [ ] 🌐 ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。OP 側セッションの終了が発火点のため方式 A が前提。コスト: 中 ※M3
 - [ ] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。ID Token リプレイ対策（`state` の検証は Phase 2 に計上済み）。コスト: 低
-- [ ] ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※方式 A 前提
+- [ ] 🌐 ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※M3
 - [ ] ★★☆ **監査ログ** — ログイン・トークン発行・失敗履歴の永続化。コスト: 低（テーブル追加）
-- [ ] ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。コスト: 中
-- [ ] ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。コスト: 中
+- [ ] 🖥️ ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。検証は方式 B の `POST /connect/authorize` に `totp` を足せば API で完結し、登録（QR 表示）だけ画面が必要。コスト: 中
+- [ ] 🖥️ ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。確認リンクの着地画面とメール送信基盤が必要。コスト: 中
 
 ### B-3. 中優先（学習価値は高いが実装コストが大きい）
 
-- [ ] ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。コスト: 高
+- [ ] 🌐 ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。リダイレクト型の認可要求が対象のため方式 A が前提。コスト: 高 ※M3
 - [ ] ★★☆ **DPoP** — RFC 9449。Bearer トークン盗難対策（所有証明）。コスト: 高
-- [ ] ★★☆ **Resource Indicators** — RFC 8707。複数リソースサーバー環境での `aud` 制限。コスト: 中
+- [x] ★★☆ **Resource Indicators** — RFC 8707。トークン要求時の `resource`（複数可）を登録済みリソースサーバーに解決し `aud`（文字列 / 配列）へ。RT は元の付与範囲を保持し、refresh で絞り込み可（M2）
+- [ ] Resource Indicators: 認可要求時（`/connect/authorize`、`/connect/device/authorize`）の `resource` 束縛（RFC 8707 §2.1）。現在はトークン要求時（§2.2）のみ
 - [ ] ★☆☆ **CIBA** — OpenID CIBA 1.0。スマートフォン承認フロー。コスト: 高
 - [ ] ★☆☆ **ユーザーグループ / ロール管理** — グループ単位のクレーム付与・アクセス制御。コスト: 中
 - [ ] ★☆☆ **カスタムクレーム管理 UI** — 管理者が任意クレームを定義・付与。コスト: 中
@@ -235,8 +240,8 @@ M2 ではこの中から一部を選んで実装します（方式 A が前提�
 
 ### 着手順
 
-冒頭の「マイルストーン計画」を参照してください。M2 の候補は上記 B-1〜B-3 のうち方式 A を前提としないもの
-（Device Authorization Grant は Phase 5、Resource Indicators / ES256 / DPoP / DCR / 監査ログ / レート制限）から選びます。
+冒頭の「マイルストーン計画」を参照してください。M2 は完了し、次は M3（🌐 方式 A）です。
+M2 で見送った 🌐 なしの候補（DPoP、DCR、Pairwise Sub、`nonce` 検証、監査ログ、レート制限）は M3 の後に必要なものを選びます。
 
 ---
 

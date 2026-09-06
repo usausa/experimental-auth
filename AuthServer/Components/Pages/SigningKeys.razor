@@ -3,14 +3,23 @@
 
 <PageTitle>Signing Keys - AuthServer</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
-    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-        Rotating creates a new signing key immediately. The previous key stays published in JWKS for @GraceDays day(s) so tokens it signed remain valid.
-    </MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+    <MudSelect T="string" @bind-Value="algorithm" Label="Algorithm" Variant="Variant.Outlined" Margin="Margin.Dense" Class="signing-keys-algorithm-select">
+        <MudSelectItem T="string" Value="@SigningKeyService.Rs256">RS256 (RSA 2048)</MudSelectItem>
+        <MudSelectItem T="string" Value="@SigningKeyService.Es256">ES256 (P-256)</MudSelectItem>
+    </MudSelect>
     <MudSpacer />
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-               StartIcon="@Icons.Material.Filled.Autorenew" OnClick="RotateAsync">Rotate Key</MudButton>
+               StartIcon="@Icons.Material.Filled.Schedule" OnClick="ScheduleAsync">Schedule Rotation</MudButton>
+    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Autorenew" OnClick="RotateNowAsync">Rotate Now</MudButton>
 </MudStack>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+    <b>Schedule Rotation</b> publishes the new key in JWKS first and starts signing with it after @PrePublishSeconds seconds, so resource servers refresh their cache before the switch.
+    <b>Rotate Now</b> switches immediately; a resource server that has not seen the new key rejects the first request with it, then refreshes JWKS.
+    Either way the previous key stays published for @GraceDays day(s).
+</MudText>
 
 <MudTable Items="keys" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.SigningKey">
     <HeaderContent>
@@ -19,12 +28,13 @@
         <MudTh>Algorithm</MudTh>
         <MudTh>Status</MudTh>
         <MudTh Class="col-datetime">Created</MudTh>
+        <MudTh Class="col-datetime">Activates</MudTh>
         <MudTh Class="col-datetime">Expires</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd>
             <MudIcon Icon="@Icons.Material.Filled.Key"
-                     Color="@(IsCurrent(context) ? Color.Primary : Color.Default)"
+                     Color="@(GetStatus(context) == KeyStatus.Current ? Color.Primary : Color.Default)"
                      Size="Size.Small" />
         </MudTd>
         <MudTd DataLabel="Key ID">
@@ -32,10 +42,13 @@
         </MudTd>
         <MudTd DataLabel="Algorithm">@context.Algorithm</MudTd>
         <MudTd DataLabel="Status">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context)">@GetStatus(context)</MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context)">@GetStatusText(context)</MudChip>
         </MudTd>
         <MudTd DataLabel="Created">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Activates">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ActivatesAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</MudText>
         </MudTd>
         <MudTd DataLabel="Expires">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</MudText>

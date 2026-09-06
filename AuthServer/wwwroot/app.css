@@ -417,3 +417,7 @@ main {
 .users-search-field {
     max-width: 280px;
 }
+
+.signing-keys-algorithm-select {
+    max-width: 220px;
+}

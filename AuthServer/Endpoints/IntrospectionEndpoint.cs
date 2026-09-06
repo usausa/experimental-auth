@@ -96,7 +96,7 @@ public static class IntrospectionEndpoint
             ["client_id"] = claims.ClientId,
             ["sub"] = claims.Sub,
             ["scope"] = claims.Scope,
-            ["aud"] = claims.Audience,
+            ["aud"] = claims.Audiences.Count == 1 ? claims.Audiences[0] : claims.Audiences,
             ["iss"] = issuer,
             ["jti"] = claims.Jti,
             ["iat"] = ToUnixTime(claims.IssuedAt),

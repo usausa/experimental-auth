@@ -171,12 +171,12 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
 | E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
 | E-08 | セッション | End Session (Logout) | `/connect/logout` | GET | 任意 | OIDC RP-Logout §2 | 4 | 🔲 | ログアウト |
-| E-09 | デバイス | Device Authorization | `/connect/device/authorize` | POST | 任意 | RFC 8628 §3.1 | 5 | 🔲 | デバイスコード発行 |
+| E-09 | デバイス | Device Authorization | `/connect/device/authorize` | POST | 任意 | RFC 8628 §3.1 | 5 | ✅ | デバイスコード発行。公開クライアント（`test-device`）は `client_id` のみで利用可 |
 | E-10 | クライアント管理 | Dynamic Registration | `/connect/register` | POST | 任意 | RFC 7591 | 5 | 🔲 | クライアント登録 |
 | E-11 | クライアント管理 | Client Configuration | `/connect/register/{client_id}` | GET/PUT/DELETE | 任意 | RFC 7592 | 5 | 🔲 | クライアント管理 |
 | E-12 | UI (Blazor) | Login | `/account/login` | — (Blazor) | 標準方式で必須 | — | 2 | ⏸ | ユーザー認証画面。API 専用方式では不要（§6.3 参照） |
 | E-13 | UI (Blazor) | Consent | `/account/consent` | — (Blazor) | 任意(推奨) | — | 3 | 🔲 | スコープ同意画面 |
-| E-14 | UI (Blazor) | Device Code Input | `/account/device` | — (Blazor) | 任意 | — | 5 | 🔲 | デバイスコード入力画面 |
+| E-14 | UI (Blazor) | Device Code Input | `/account/device` | — (Blazor) | 任意 | — | 5 | ✅ | 🖥️ user_code と資格情報を 1 フォームで受け取る承認画面。リダイレクト・セッション不要 |
 | E-15 | UI (Blazor) | User Registration | `/account/register` | — (Blazor) | 任意 | — | 5 | 🔲 | ユーザー登録画面 |
 | E-16 | UI (Blazor) | Password Change | `/account/password` | — (Blazor) | 任意 | — | 5 | 🔲 | パスワード変更画面 |
 | E-17 | UI (Blazor) | Password Reset | `/account/password-reset` | — (Blazor) | 任意 | — | 5 | 🔲 | パスワードリセット画面 |
@@ -191,7 +191,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | G-01 | `client_credentials` | **必須** | RFC 6749 §4.4 | 1 | ✅ | サーバー間認証 |
 | G-02 | `authorization_code` | **必須** | RFC 6749 §4.1, RFC 7636 | 2 | ✅ | 認可コード交換（PKCE必須） |
 | G-03 | `refresh_token` | **必須**(推奨) | RFC 6749 §6 | 2 | ✅ | トークンリフレッシュ（ローテーションあり） |
-| G-04 | `urn:ietf:params:oauth:grant-type:device_code` | 任意 | RFC 8628 §3.4 | 5 | 🔲 | デバイスフロー |
+| G-04 | `urn:ietf:params:oauth:grant-type:device_code` | 任意 | RFC 8628 §3.4 | 5 | ✅ | デバイスフロー。`authorization_pending` / `slow_down` / `access_denied` / `expired_token` を返しつつポーリングを受ける |
 | G-05 | `password` (ROPC) | 非推奨 | RFC 6749 §4.3 | — | 🔲 | セキュリティ上非推奨。grant_type としては実装しない（ただし現行の E-04 は資格情報を直接受け取るため、実質的に ROPC 相当の性質を持つ。§6.3 参照） |
 
 ---
@@ -260,7 +260,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 ```
 Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
  最小動作    認可コード    OIDC準拠     運用機能      拡張機能
-   ✅         🟡           🟡           🟡           🔲
+   ✅         🟡           🟡           🟡           🟡
 ```
 
 **現在の実装状況:**
@@ -270,8 +270,8 @@ Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
 | Phase 1 | ✅ 完了 | Discovery / JWKS / `client_credentials` / RS256 署名 / ResourceServer 連携 |
 | Phase 2 | 🟡 一部完了 | 認可コード + PKCE(S256) + リフレッシュトークン（ローテーション込み）を **方式 B（API 専用）** で実装済み。標準のブラウザリダイレクト方式（方式 A）と `/account/login` は未実装（§6.3 参照） |
 | Phase 3 | 🟡 一部完了 | ID Token（`nonce` / `auth_time` / `at_hash` / `amr`）と UserInfo、Discovery 拡張を実装済み。同意画面・同意情報管理は未実装（方式 A 前提） |
-| Phase 4 | 🟡 一部完了 | 失効 / 検査 / 鍵ローテーション / クリーンアップ / マイグレーション機構を実装済み（M1）。ログアウト・セッションは方式 A 前提で未実装（M3） |
-| Phase 5 | 🔲 未着手 | デバイスフロー / 動的登録 / ユーザー向け Blazor 画面群 |
+| Phase 4 | 🟡 一部完了 | 失効 / 検査 / 鍵ローテーション（事前公開・ES256 対応）/ クリーンアップ / マイグレーション機構を実装済み（M1・M2）。ログアウト・セッションは方式 A 前提で未実装（M3） |
+| Phase 5 | 🟡 一部完了 | Device Authorization Grant と承認画面 🖥️ を実装済み（M2）。動的登録・ユーザー向け画面群は未実装 |
 
 進捗の詳細と残タスクは `TODO.md` を参照してください（§13）。
 
@@ -571,7 +571,7 @@ User/Browser                          AuthServer
 | 実装対象 | 種別 | 実装 | 詳細 |
 |---------|------|------|------|
 | revoked_tokens テーブル・データアクセス | インフラ | ✅ | `RevokedTokenService`。失効したアクセストークンの JTI を保存・照合 |
-| signing_keys テーブル拡張 | インフラ | ✅ | 現用 / 猶予期間 / 退役の 3 状態を `is_active` と `expires_at` で表現 |
+| signing_keys テーブル拡張 | インフラ | ✅ | 予約 / 現用 / 猶予期間 / 退役の 4 状態を `is_active`・`expires_at`・`activates_at` で表現。`algorithm` は RS256 / ES256 |
 | スキーママイグレーション機構 | インフラ | ✅ | `schema_migrations` で適用済みバージョンを管理。v1: `authorization_codes.consumed_at`、v2: `refresh_tokens.source_code_hash` |
 | E-06 `/connect/revoke` | エンドポイント | ✅ | `token` + `token_type_hint`。無効・未知・他クライアントのトークンでも 200（存在を漏らさない） |
 | E-07 `/connect/introspect` | エンドポイント | ✅ | `active`, `token_type`, `client_id`, `sub`, `scope`, `aud`, `iss`, `jti`, `iat`, `nbf`, `exp`（+ `username`） |
@@ -579,7 +579,7 @@ User/Browser                          AuthServer
 | UC-S15 トークン失効処理 | 内部処理 | ✅ | RT は `is_revoked`、AT は JTI を `revoked_tokens` に登録 |
 | UC-S16 トークン失効チェック | 内部処理 | ✅ | AuthServer 内（UserInfo / Introspection）で照合。ResourceServer は照合しない（方式 3） |
 | UC-S17 イントロスペクション | 内部処理 | ✅ | JWT（アクセストークン）と参照型（リフレッシュトークン）の両対応 |
-| UC-S18 鍵ローテーション | 内部処理 | ✅ | 管理画面 `/signing-keys` から手動、または `SigningKeyRotationDays` で自動。旧鍵は猶予期間中 JWKS に公開 |
+| UC-S18 鍵ローテーション | 内部処理 | ✅ | 管理画面 `/signing-keys` から予約（事前公開）または即時、`SigningKeyRotationDays` で自動予約。アルゴリズムは RS256 / ES256 を選択可。旧鍵は猶予期間中 JWKS に公開 |
 | UC-S19 セッション管理 | 内部処理 | 🔲 | 方式 A 前提（M3） |
 | 期限切れデータのクリーンアップ | 内部処理 | ✅ | `MaintenanceService` が `MaintenanceIntervalMinutes` ごとに認可コード・RT・失効リストを削除し、猶予期間切れの鍵を退役 |
 
@@ -664,28 +664,49 @@ AuthServer (内部)                                        ResourceServer
 `JwksCacheMaxAgeSeconds`（既定 3600 秒）は猶予期間 `SigningKeyGraceDays`（既定 7 日）より十分短くしてください。
 キャッシュが猶予期間を越えると、退役済みの鍵で署名されたトークンを検証しようとする ResourceServer が現れます。
 
-ASP.NET Core の JwtBearer は、未知の `kid` を受けた要求そのものは失敗させ（401）、JWKS の再取得を予約してから
-次の要求で新鍵を使います。実測でもローテーション直後の最初の 1 要求だけが 401 になり、以降は 200 でした。
-これを避けるには、新鍵を先に JWKS へ公開しておき、`JwksCacheMaxAgeSeconds` の経過後に署名鍵を切り替える
-2 段階ローテーション（事前公開）が必要です。`TODO.md` の M2 候補に挙げています。
+上の図は **即時ローテーション（Rotate Now）** です。ASP.NET Core の JwtBearer は、未知の `kid` を受けた要求そのものは
+失敗させ（401）、JWKS の再取得を予約してから次の要求で新鍵を使うため、即時ローテーションでは直後の 1 要求が 401 になります
+（M1 で実測）。これを避けるのが **事前公開（Schedule Rotation、2 段階ローテーション）** です。
+
+**事前公開（2 段階ローテーション）:**
+
+1. 予約: 新鍵を生成し `activates_at = now + SigningKeyPrePublishSeconds` で保存する。JWKS には即座に載るが、署名には使わない
+2. 事前公開期間: ResourceServer は `Jwt:JwksRefreshSeconds` ごとの自動再取得（または起動時）で新鍵をキャッシュに取り込む
+3. 有効化: `activates_at` を過ぎたあとの最初の署名要求、または保守ジョブが新鍵を現用へ昇格させ、旧現用鍵に猶予期限を付ける
+4. 猶予期間: 旧鍵は JWKS に残り、旧鍵で署名済みのトークンは引き続き検証できる。期限後に保守ジョブが退役させる
+
+**時間の整合条件**: `ResourceServer の Jwt:JwksRefreshSeconds`（既定 1800）と `AuthServer の JwksCacheMaxAgeSeconds`（既定 3600）は
+`SigningKeyPrePublishSeconds`（既定 3600）以下にします。IdentityModel の自動再取得間隔の下限は 5 分です。
+M2 の実測では、120 秒の事前公開期間中に ResourceServer が JWKS を取得していた状態で有効化を迎えると、
+新鍵で署名した最初の要求から 200 でした（即時ローテーションでは 401）。
+
+アルゴリズムは鍵ごとに `RS256`（RSA 2048）または `ES256`（P-256）を選べます。ID Token / アクセストークンの `alg` は現用鍵に従い、
+JWKS は RSA を `n`/`e`、EC を `crv`/`x`/`y`（座標は 32 バイトに左ゼロ埋め、RFC 7518 §6.2.1.2）で公開します。
+Discovery の `id_token_signing_alg_values_supported` は `["RS256", "ES256"]` です。
 
 ### 6.6 Phase 5: 拡張機能
 
 **目標**: デバイスフロー・動的クライアント登録・ユーザー管理など、発展的な機能を実装する。
 
-| 実装対象 | 種別 | 詳細 |
-|---------|------|------|
-| device_codes テーブル・データアクセス | インフラ | デバイスコードの保存・状態管理 |
-| E-09 `/connect/device/authorize` | エンドポイント | `device_code`, `user_code`, `verification_uri`, `interval` 返却 |
-| E-14 `/account/device` (Blazor) | UI | ユーザーコード入力・認証画面 |
-| E-03 `/connect/token` (device_code) | エンドポイント | ポーリング応答 |
-| E-10 `/connect/register` | エンドポイント | クライアント動的登録 |
-| E-11 `/connect/register/{client_id}` | エンドポイント | クライアント情報 CRUD |
-| E-15 `/account/register` (Blazor) | UI | ユーザー新規登録 |
-| E-16 `/account/password` (Blazor) | UI | パスワード変更 |
-| E-17 `/account/password-reset` (Blazor) | UI | パスワードリセット |
-| E-18 `/account/consents` (Blazor) | UI | 同意管理 |
-| UC-S20〜UC-S23 | 内部処理 | デバイスコード管理、クライアント登録、ユーザー管理 |
+Device Authorization Grant（RFC 8628）は M2 で実装済みです。承認画面 🖥️ は user_code と資格情報を 1 つのフォームで受け取り、
+リダイレクトもサーバー側セッションも使わないため、方式 A（M3）を待たずに提供できました。
+
+| 実装対象 | 種別 | 実装 | 詳細 |
+|---------|------|------|------|
+| device_codes テーブル・データアクセス | インフラ | ✅ | `DeviceCodeService`。device_code は SHA-256 ハッシュ保存、user_code は base20 8 文字（RFC 8628 §6.1） |
+| E-09 `/connect/device/authorize` | エンドポイント | ✅ | `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in`, `interval` 返却 |
+| E-14 `/account/device` (Blazor) | UI | ✅ | 🖥️ ユーザーコード入力・認証・承認 / 拒否画面（`verification_uri_complete` で user_code を事前入力） |
+| E-03 `/connect/token` (device_code) | エンドポイント | ✅ | ポーリング応答。`interval` 未満の再ポーリングは `slow_down`。承認後の交換は 1 回のみ（`consumed`） |
+| E-10 `/connect/register` | エンドポイント | 🔲 | クライアント動的登録 |
+| E-11 `/connect/register/{client_id}` | エンドポイント | 🔲 | クライアント情報 CRUD |
+| E-15 `/account/register` (Blazor) | UI | 🔲 | 🖥️ ユーザー新規登録 |
+| E-16 `/account/password` (Blazor) | UI | 🔲 | 🖥️ パスワード変更 |
+| E-17 `/account/password-reset` (Blazor) | UI | 🔲 | 🖥️ パスワードリセット |
+| E-18 `/account/consents` (Blazor) | UI | 🔲 | 🌐 同意管理（同意機能 = 方式 A が前提） |
+| UC-S20〜UC-S23 | 内部処理 | 🟡 | デバイスコード管理は実装済み。クライアント登録、ユーザー管理は未実装 |
+
+デバイスフローで発行したリフレッシュトークンは `source_code_hash` にデバイスコードのハッシュを持ち、認可コードと同じく
+ファミリー単位で失効できます。ID Token の `auth_time` はユーザーが承認画面で認証した時刻です。
 
 **Phase 5 デバイスフロー完全シーケンス:**
 
@@ -761,6 +782,7 @@ User/Browser     CLI App              AuthServer
 | 400 | `unauthorized_client` | クライアントに許可されていない grant_type |
 | 400 | `unsupported_grant_type` | サポートしていない grant_type |
 | 400 | `invalid_scope` | 不正なスコープ |
+| 400 | `invalid_target` | `resource` が絶対 URI でない・フラグメントを含む・未登録・元の付与範囲外（RFC 8707 §2） |
 | 400 | `authorization_pending` | デバイスフロー：ユーザー未認証 |
 | 400 | `slow_down` | デバイスフロー：ポーリング間隔短すぎ |
 | 400 | `expired_token` | デバイスフロー：デバイスコード期限切れ |
@@ -815,7 +837,7 @@ https://client.example.com/callback
 | SEC-04 | 認可コード一回限り使用 | Token Endpoint | ✅ | `consumed_at` で消費済みを記録。再提示時はそのコードから派生した RT ファミリー（`source_code_hash`）をすべて失効。ローテーション後の旧 RT の再提示も同様にファミリー失効 |
 | SEC-05 | redirect_uri 完全一致検証 | Authorization Endpoint | ✅ | 登録済み URI との完全一致。トークン交換時にも再照合 |
 | SEC-06 | パスワードハッシュ化 | ユーザー管理 | ✅ | PBKDF2-SHA256 / 60 万回反復 + `FixedTimeEquals` |
-| SEC-07 | トークン有効期限 | JWT | 🟡 | 実装値: アクセストークン 1 時間 (3600 秒)、**リフレッシュトークン 1 日 (86400 秒)**、**認可コード 2 分 (120 秒)**。当初仕様（30 日 / 10 分）とは異なる |
+| SEC-07 | トークン有効期限 | JWT | ✅ | すべて `AuthServer` セクションで設定可能。既定値は §8.3 の推奨値（アクセストークン 15 分、リフレッシュトークン 7 日（無操作）/ 30 日（絶対）、認可コード 2 分、デバイスコード 10 分） |
 | SEC-08 | 暗号学的乱数使用 | コード・トークン生成 | ✅ | `RandomNumberGenerator.GetBytes(32)` を使用 |
 | SEC-09 | レート制限 | Token Endpoint, Login | 🔲 | ブルートフォース防止。未実装 |
 | SEC-10 | CORS 制限 | 全エンドポイント | 🔲 | 許可オリジンを明示的に設定。未実装 |
@@ -854,6 +876,27 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 }
 ```
 
+### 8.3 トークン有効期限の推奨値
+
+方式 3（§6.5）ではアクセストークンの有効期限が「失効の反映遅延」そのものになるため、アクセストークンを短くし、
+リフレッシュトークンのローテーションで継続利用させる構成を推奨値としました。すべて `appsettings.json` の `AuthServer` セクションで変更できます。
+
+| 設定キー | 既定値 | 対象 | 根拠 |
+|---------|-------|------|------|
+| `AccessTokenLifetimeSeconds` | 900（15 分） | アクセストークン | ResourceServer は失効を参照しない（方式 3）。15 分なら失効の反映遅延の上限も 15 分。RT ローテーションがあるので短くしてもクライアント負担は小さい |
+| `IdTokenLifetimeSeconds` | 900（15 分） | ID Token | クライアントは受領直後に検証して使い切るため、アクセストークンと同程度で十分 |
+| `RefreshTokenLifetimeSeconds` | 604800（7 日） | リフレッシュトークン（無操作） | ローテーションごとに延びる無操作タイムアウト。CLI を数日放置しても再ログイン不要な長さ |
+| `RefreshTokenAbsoluteLifetimeSeconds` | 2592000（30 日） | リフレッシュトークン（絶対） | 最初の認可からの上限（`family_expires_at`）。ローテーションでは延びない。当初仕様の 30 日をここに採用 |
+| `AuthorizationCodeLifetimeSeconds` | 120（2 分） | 認可コード | RFC 6749 §4.1.2 は最大 10 分を推奨。方式 B は取得直後に交換するため短くて良く、方式 A でも数十秒で足りる |
+| `DeviceCodeLifetimeSeconds` | 600（10 分） | デバイスコード / ユーザーコード | 別デバイスでブラウザを開きコードを入力する時間。RFC 8628 の例は 1800 秒だが、user_code の総当たり耐性のため短めにした |
+| `DeviceCodePollIntervalSeconds` | 5 | デバイスフローのポーリング間隔 | RFC 8628 §3.2 の既定値 |
+
+当初仕様（SEC-07 の旧値: RT 30 日 / 認可コード 10 分）との差は次の判断によるものです。
+
+- 認可コードの 10 分は RFC の上限であり推奨値ではない。実装値 2 分を維持し、仕様側を合わせた
+- RT の「30 日」は無操作でも 30 日有効という意味で危険なので、無操作 7 日 + 絶対 30 日の 2 段構えにした。
+  無操作タイムアウトは `expires_at`、絶対期限は `family_expires_at` で表現し、ローテーションでは前者だけが延びる
+
 ---
 
 ## 9. Discovery メタデータ完全定義
@@ -871,8 +914,10 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
   "jwks_uri": "http://localhost:5080/.well-known/jwks.json",
   "revocation_endpoint": "http://localhost:5080/connect/revoke",
   "introspection_endpoint": "http://localhost:5080/connect/introspect",
+  "device_authorization_endpoint": "http://localhost:5080/connect/device/authorize",
   "grant_types_supported": [
-    "client_credentials", "authorization_code", "refresh_token"
+    "client_credentials", "authorization_code", "refresh_token",
+    "urn:ietf:params:oauth:grant-type:device_code"
   ],
   "response_types_supported": ["code"],
   "token_endpoint_auth_methods_supported": [
@@ -884,7 +929,7 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
   "introspection_endpoint_auth_methods_supported": [
     "client_secret_post", "client_secret_basic"
   ],
-  "id_token_signing_alg_values_supported": ["RS256"],
+  "id_token_signing_alg_values_supported": ["RS256", "ES256"],
   "scopes_supported": [
     "openid", "profile", "email", "api.read", "api.write"
   ],
@@ -898,8 +943,8 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 }
 ```
 
-未反映の項目: `device_authorization_endpoint`, `end_session_endpoint`, `registration_endpoint`,
-`response_modes_supported`, `offline_access` スコープ。いずれも対応エンドポイントが未実装のためです。
+未反映の項目: `end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ。
+いずれも対応エンドポイントが未実装のためです。
 `response_modes_supported` は方式 B（JSON 応答）に該当する標準値がないため、方式 A 実装時に追加します。
 `request_uri_parameter_supported` は省略時の既定値が `true` のため、未対応を明示するために `false` を出力しています。
 
@@ -936,7 +981,7 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
     "urn:ietf:params:oauth:grant-type:device_code"
   ],
   "subject_types_supported": ["public"],
-  "id_token_signing_alg_values_supported": ["RS256"],
+  "id_token_signing_alg_values_supported": ["RS256", "ES256"],
   "token_endpoint_auth_methods_supported": [
     "client_secret_basic", "client_secret_post"
   ],
@@ -1091,6 +1136,14 @@ CREATE TABLE schema_migrations (
 ALTER TABLE authorization_codes ADD COLUMN consumed_at TEXT;
 -- v2: 発行元の認可コード。同じコードから派生した RT (ファミリー) をまとめて失効させる
 ALTER TABLE refresh_tokens ADD COLUMN source_code_hash TEXT;
+-- v3: 署名鍵の有効化時刻。JWKS に先行公開してから署名に使い始める 2 段階ローテーション用
+ALTER TABLE signing_keys ADD COLUMN activates_at TEXT;
+-- v4: リフレッシュトークンのファミリー絶対期限 (ローテーションでは延びない)
+ALTER TABLE refresh_tokens ADD COLUMN family_expires_at TEXT;
+-- v5: リフレッシュトークンに紐づく audience (JSON 配列)。refresh 時に resource を省略しても維持する (RFC 8707)
+ALTER TABLE refresh_tokens ADD COLUMN audiences TEXT;
+-- v6: デバイスコードの承認時刻 (ID Token の auth_time)
+ALTER TABLE device_codes ADD COLUMN authorized_at TEXT;
 ```
 
 **実装との差異** (`AuthServer/Database/DatabaseInitializer.cs`):
@@ -1103,13 +1156,14 @@ ALTER TABLE refresh_tokens ADD COLUMN source_code_hash TEXT;
 
 ### 10.2 初期データ
 
-`AuthServer/Database/DataSeeder.cs` が投入する内容です。`Seed:Enabled` が `true` のとき
-（未設定時は Development 環境のみ）、かつ `clients` テーブルが空のときのみ実行されます。
+`AuthServer/Database/DataSeeder.cs` が投入する内容です。`Seed:Enabled` が `true` のとき（未設定時は Development 環境のみ）に実行され、
+フィクスチャごとに存在確認して不足分だけ INSERT します。既存 DB に後から追加されたフィクスチャ（`test-device` など）も次回起動時に補われます。
 
 | 種別 | ID | シークレット / パスワード | 備考 |
 |------|----|--------------------------|------|
 | クライアント | `test-client` | `test-secret` | `client_credentials` 用 |
 | クライアント | `test-webapp` | `webapp-secret` | `authorization_code` + `refresh_token` 用 |
+| クライアント | `test-device` | （なし・公開クライアント） | `urn:ietf:params:oauth:grant-type:device_code` + `refresh_token` 用。`token_endpoint_auth_method = none` |
 | リソースサーバー | `resource-server-001` | — | audience = `http://localhost:5180` |
 | ユーザー | `alice` (`user-001`) | `password` | Alice Tester / alice@example.com |
 
@@ -1199,6 +1253,23 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 
 `AppHost` では Aspire の推移的依存である `MessagePack` を 3.1.8 に固定しています
 （GHSA-hv8m-jj95-wg3x 対応）。この固定を外すと脆弱性警告が復活します。
+
+### 12.1 設定キー（appsettings.json）
+
+| セクション | キー | 既定値 | 説明 |
+|-----------|------|-------|------|
+| `AuthServer` | `Issuer` | `http://localhost:5080` | `iss` と Discovery の基準 URL |
+| `AuthServer` | `AccessTokenLifetimeSeconds` 他 | §8.3 | トークン有効期限一式 |
+| `AuthServer` | `JwksCacheMaxAgeSeconds` | 3600 | JWKS 応答の `Cache-Control: max-age` |
+| `AuthServer` | `SigningKeyAlgorithm` | `RS256` | 初期鍵・自動ローテーションで生成する鍵のアルゴリズム（`RS256` / `ES256`） |
+| `AuthServer` | `SigningKeyRotationDays` | 0 | 自動ローテーション間隔（日）。0 で無効（管理画面からの手動のみ） |
+| `AuthServer` | `SigningKeyPrePublishSeconds` | 3600 | 予約鍵を JWKS に公開してから署名に使い始めるまでの時間 |
+| `AuthServer` | `SigningKeyGraceDays` | 7 | 旧鍵を JWKS に残す猶予期間 |
+| `AuthServer` | `MaintenanceIntervalMinutes` | 60 | クリーンアップ・鍵の昇格 / 退役 / 自動予約を行う間隔 |
+| `Seed` | `Enabled` | Development のみ true | テストデータ投入の可否 |
+| `Jwt`（ResourceServer） | `Authority` / `Audience` | — | 検証する発行者と audience |
+| `Jwt`（ResourceServer） | `RequireHttpsMetadata` | true | Development のみ false |
+| `Jwt`（ResourceServer） | `JwksRefreshSeconds` | 1800 | OpenID 構成 / JWKS の自動再取得間隔。`SigningKeyPrePublishSeconds` 以下にする（下限 5 分） |
 
 ---
 

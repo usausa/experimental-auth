@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -38,6 +40,10 @@ var audience = jwt["Audience"] ?? throw new InvalidOperationException("Jwt:Audie
 // 既定は true (安全側)。開発環境は HTTP 構成のため appsettings.Development.json で false に下げている。
 var requireHttps = jwt.GetValue("RequireHttpsMetadata", true);
 
+// JWKS (OpenID 構成) の自動再取得間隔。AuthServer の鍵事前公開期間 (SigningKeyPrePublishSeconds) 以下にしておくと、
+// 予約鍵が署名に使われる前にこの RS が新鍵を取得でき、ローテーション直後の 401 を避けられる。IdentityModel の下限は 5 分。
+var jwksRefreshSeconds = jwt.GetValue("JwksRefreshSeconds", 1800);
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -45,6 +51,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.Audience = audience;
         options.RequireHttpsMetadata = requireHttps;
         options.MapInboundClaims = false;
+        options.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+            $"{authority.TrimEnd('/')}/.well-known/openid-configuration",
+            new OpenIdConnectConfigurationRetriever(),
+            new HttpDocumentRetriever { RequireHttps = requireHttps })
+        {
+            AutomaticRefreshInterval = TimeSpan.FromSeconds(jwksRefreshSeconds)
+        };
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,

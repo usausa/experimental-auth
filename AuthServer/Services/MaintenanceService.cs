@@ -6,9 +6,10 @@ using AuthServer.Models;
 
 using Microsoft.Extensions.Options;
 
-// 期限切れデータのクリーンアップと署名鍵の自動ローテーションを定期実行するバックグラウンドサービス。
+// 期限切れデータのクリーンアップと署名鍵の世代交代 (予約鍵の昇格・自動ローテーションの予約・猶予期間切れの退役) を定期実行する。
 public sealed class MaintenanceService(
     AuthorizationCodeService codeService,
+    DeviceCodeService deviceCodeService,
     RefreshTokenService refreshTokenService,
     RevokedTokenService revokedTokenService,
     SigningKeyService signingKeyService,
@@ -36,16 +37,18 @@ public sealed class MaintenanceService(
         {
             var now = DateTime.UtcNow;
             var codes = await codeService.DeleteExpiredAsync(now);
+            var deviceCodes = await deviceCodeService.DeleteExpiredAsync(now);
             var refreshTokens = await refreshTokenService.DeleteExpiredAsync(now);
             var revokedTokens = await revokedTokenService.DeleteExpiredAsync(now);
+            var promoted = signingKeyService.PromoteDueKeys(now);
             var retiredKeys = signingKeyService.RetireExpiredKeys(now);
-            var rotated = RotateKeyIfDue(now);
+            var scheduled = ScheduleRotationIfDue(now);
 
             if (logger.IsEnabled(LogLevel.Information))
             {
                 logger.LogInformation(
-                    "Maintenance completed: expired codes={Codes}, expired refresh tokens={RefreshTokens}, expired revocations={Revocations}, retired keys={RetiredKeys}, key rotated={Rotated}",
-                    codes, refreshTokens, revokedTokens, retiredKeys, rotated);
+                    "Maintenance completed: expired codes={Codes}, expired device codes={DeviceCodes}, expired refresh tokens={RefreshTokens}, expired revocations={Revocations}, key promoted={Promoted}, retired keys={RetiredKeys}, rotation scheduled={Scheduled}",
+                    codes, deviceCodes, refreshTokens, revokedTokens, promoted, retiredKeys, scheduled);
             }
         }
         catch (DbException ex)
@@ -58,11 +61,11 @@ public sealed class MaintenanceService(
         }
     }
 
-    // 現用鍵が SigningKeyRotationDays より古ければローテーションする。0 以下なら自動ローテーションしない。
-    private bool RotateKeyIfDue(DateTime now)
+    // 現用鍵が SigningKeyRotationDays より古ければ、次の鍵を予約する (事前公開)。0 以下なら自動ローテーションしない。
+    private bool ScheduleRotationIfDue(DateTime now)
     {
         var rotationDays = options.Value.SigningKeyRotationDays;
-        if (rotationDays <= 0)
+        if ((rotationDays <= 0) || signingKeyService.HasPendingKey())
         {
             return false;
         }
@@ -73,10 +76,10 @@ public sealed class MaintenanceService(
             return false;
         }
 
-        var kid = signingKeyService.RotateKey(TimeSpan.FromDays(options.Value.SigningKeyGraceDays));
+        var kid = signingKeyService.ScheduleRotation(options.Value.SigningKeyAlgorithm);
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("Signing key rotated automatically. New kid: {Kid}", kid);
+            logger.LogInformation("Signing key rotation scheduled automatically. Pending kid: {Kid}", kid);
         }
 
         return true;

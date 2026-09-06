@@ -5,14 +5,17 @@ using System.Security.Cryptography;
 using System.Text;
 
 using AuthServer.Database;
+using AuthServer.Models;
 
 using Dapper;
 
+using Microsoft.Extensions.Options;
+
 #pragma warning disable CA1054
 // 認可コードの発行・検証・消費を管理するサービス。
-public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
+public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOptions<AuthServerOptions> options)
 {
-    private const int CodeLifetimeSeconds = 120;
+    private readonly AuthServerOptions options = options.Value;
 
     // 認可コードを発行して DB に保存し、コード文字列を返す。
     public async Task<string> IssueAsync(
@@ -28,7 +31,7 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory)
         var code = GenerateCode();
         var hash = HashCode(code);
         var now = DateTime.UtcNow;
-        var expiresAt = now.AddSeconds(CodeLifetimeSeconds);
+        var expiresAt = now.AddSeconds(options.AuthorizationCodeLifetimeSeconds);
 
         await using var connection = dbFactory.OpenConnection();
         await connection.ExecuteAsync("""

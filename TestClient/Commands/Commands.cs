@@ -40,6 +40,9 @@ public sealed class TokenCommand : ICommandHandler
     [Option<string>("--password", "-p", Description = "Password (password grant)")]
     public string? Password { get; set; }
 
+    [Option<string>("--resource", Description = "Resource indicator (RFC 8707): audience URI of the target resource server")]
+    public string? Resource { get; set; }
+
     [Option<string>("--token-file", "-f", Description = "Token file path (default: ~/.testclient/tokens.json)")]
     public string? TokenFilePath { get; set; }
 
@@ -173,7 +176,7 @@ public sealed class TokenCommand : ICommandHandler
         // トークン交換
         Console.WriteLine($"Exchanging code for tokens at {authBase.TrimEnd('/')}/connect/token ...");
 
-        using var tokenContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        var tokenForm = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
@@ -181,7 +184,13 @@ public sealed class TokenCommand : ICommandHandler
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret,
             ["code_verifier"] = codeVerifier
-        });
+        };
+        if (!String.IsNullOrEmpty(Resource))
+        {
+            tokenForm["resource"] = Resource;
+        }
+
+        using var tokenContent = new FormUrlEncodedContent(tokenForm);
 
         var tokenResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", tokenContent);
         var tokenBody = await tokenResponse.Content.ReadAsStringAsync();
@@ -222,37 +231,7 @@ public sealed class TokenCommand : ICommandHandler
         if (store.IdToken is not null)
         {
             ConsoleHelper.WriteInfo("id_token    ", ConsoleHelper.Truncate(store.IdToken, 60));
-            PrintIdTokenClaims(store.IdToken);
-        }
-    }
-
-    // ID Token のペイロード (第 2 セグメント) を base64url デコードしてクレームを表示する。署名検証は行わない。
-    private static void PrintIdTokenClaims(string idToken)
-    {
-        var parts = idToken.Split('.');
-        if (parts.Length != 3)
-        {
-            return;
-        }
-
-        var payload = parts[1].Replace('-', '+').Replace('_', '/');
-        payload = payload.PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '=');
-
-        try
-        {
-            using var doc = JsonDocument.Parse(Convert.FromBase64String(payload));
-            foreach (var property in doc.RootElement.EnumerateObject())
-            {
-                Console.WriteLine($"    {property.Name,-18}: {property.Value.GetRawText()}");
-            }
-        }
-        catch (FormatException)
-        {
-            ConsoleHelper.WriteError("id_token payload could not be decoded.");
-        }
-        catch (JsonException)
-        {
-            ConsoleHelper.WriteError("id_token payload is not valid JSON.");
+            ConsoleHelper.PrintJwtClaims(store.IdToken);
         }
     }
 
@@ -274,13 +253,19 @@ public sealed class TokenCommand : ICommandHandler
         var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
         var scope = String.IsNullOrEmpty(Scope) ? "api.read api.write" : Scope;
 
-        return new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret,
             ["scope"] = scope
         };
+        if (!String.IsNullOrEmpty(Resource))
+        {
+            form["resource"] = Resource;
+        }
+
+        return form;
     }
 }
 
@@ -374,6 +359,9 @@ public sealed class RefreshCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--resource", Description = "Resource indicator (RFC 8707): narrow the audience to this resource server URI")]
+    public string? Resource { get; set; }
+
     [Option<string>("--token-file", "-f", Description = "Token file path")]
     public string? TokenFilePath { get; set; }
 
@@ -393,13 +381,19 @@ public sealed class RefreshCommand : ICommandHandler
 
         Console.WriteLine($"Refreshing token at {authBase.TrimEnd('/')}/connect/token ...");
 
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
             ["refresh_token"] = store.RefreshToken,
             ["client_id"] = clientId,
             ["client_secret"] = clientSecret
-        });
+        };
+        if (!String.IsNullOrEmpty(Resource))
+        {
+            form["resource"] = Resource;
+        }
+
+        using var content = new FormUrlEncodedContent(form);
 
         var response = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", content);
         var body = await response.Content.ReadAsStringAsync();
@@ -630,6 +624,192 @@ public sealed class RevokeCommand : ICommandHandler
     }
 }
 
+// ---------------------------------------------------------------------------
+// device
+// ---------------------------------------------------------------------------
+[Command("device", "Obtain tokens with the Device Authorization Grant (RFC 8628)")]
+public sealed class DeviceCommand : ICommandHandler
+{
+    private const string GrantType = "urn:ietf:params:oauth:grant-type:device_code";
+
+    private readonly HttpClient http;
+
+    public DeviceCommand(HttpClient http)
+    {
+        this.http = http;
+    }
+
+    [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
+
+    [Option<string>("--client-id", Description = "Client ID (default: test-device, a public client)")]
+    public string ClientId { get; set; } = "test-device";
+
+    [Option<string>("--client-secret", Description = "Client secret (omit for public clients)")]
+    public string? ClientSecret { get; set; }
+
+    [Option<string>("--scope", "-s", Description = "Requested scope")]
+    public string Scope { get; set; } = "openid profile email api.read";
+
+    [Option<string>("--token-file", "-f", Description = "Token file path")]
+    public string? TokenFilePath { get; set; }
+
+    public async ValueTask ExecuteAsync(CommandContext context)
+    {
+        var authBase = (String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer).TrimEnd('/');
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-device" : ClientId;
+        var scope = String.IsNullOrEmpty(Scope) ? "openid profile email api.read" : Scope;
+
+        // 1. デバイス認可要求
+        var authorizeForm = new Dictionary<string, string> { ["client_id"] = clientId, ["scope"] = scope };
+        if (!String.IsNullOrEmpty(ClientSecret))
+        {
+            authorizeForm["client_secret"] = ClientSecret;
+        }
+
+        Console.WriteLine($"Requesting device authorization from {authBase}/connect/device/authorize ...");
+        using var authorizeContent = new FormUrlEncodedContent(authorizeForm);
+        var authorizeResponse = await http.PostAsync($"{authBase}/connect/device/authorize", authorizeContent);
+        var authorizeBody = await authorizeResponse.Content.ReadAsStringAsync();
+        if (!authorizeResponse.IsSuccessStatusCode)
+        {
+            ConsoleHelper.WriteError($"Device authorization failed: {(int)authorizeResponse.StatusCode} {authorizeResponse.ReasonPhrase}");
+            ConsoleHelper.WriteError(authorizeBody);
+            context.ExitCode = 1;
+            return;
+        }
+
+        string deviceCode;
+        int expiresIn;
+        int interval;
+        using (var doc = JsonDocument.Parse(authorizeBody))
+        {
+            var root = doc.RootElement;
+            deviceCode = root.GetProperty("device_code").GetString() ?? string.Empty;
+            expiresIn = root.TryGetProperty("expires_in", out var e) ? e.GetInt32() : 600;
+            interval = root.TryGetProperty("interval", out var i) ? i.GetInt32() : 5;
+
+            Console.WriteLine();
+            ConsoleHelper.WriteSuccess("Open the verification page in a browser and enter the code:");
+            ConsoleHelper.WriteInfo("user_code   ", root.GetProperty("user_code").GetString() ?? string.Empty);
+            ConsoleHelper.WriteInfo("url         ", root.TryGetProperty("verification_uri_complete", out var vc) ? vc.GetString() ?? string.Empty : root.GetProperty("verification_uri").GetString() ?? string.Empty);
+            ConsoleHelper.WriteInfo("expires_in  ", $"{expiresIn}s");
+            Console.WriteLine();
+        }
+
+        // 2. 承認されるまでトークンエンドポイントをポーリング (RFC 8628 §3.4 / §3.5)
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
+        ConsoleHelper.BeginProgress("Waiting for approval");
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(interval));
+
+            var tokenForm = new Dictionary<string, string>
+            {
+                ["grant_type"] = GrantType,
+                ["device_code"] = deviceCode,
+                ["client_id"] = clientId
+            };
+            if (!String.IsNullOrEmpty(ClientSecret))
+            {
+                tokenForm["client_secret"] = ClientSecret;
+            }
+
+            using var tokenContent = new FormUrlEncodedContent(tokenForm);
+            var tokenResponse = await http.PostAsync($"{authBase}/connect/token", tokenContent);
+            var tokenBody = await tokenResponse.Content.ReadAsStringAsync();
+
+            if (tokenResponse.IsSuccessStatusCode)
+            {
+                Console.WriteLine();
+                SaveTokens(tokenBody, scope);
+                return;
+            }
+
+            var error = ReadError(tokenBody);
+            switch (error)
+            {
+                case "authorization_pending":
+                    Console.Write('.');
+                    continue;
+                case "slow_down":
+                    interval += 5;
+                    Console.Write('~');
+                    continue;
+                case "access_denied":
+                    Console.WriteLine();
+                    ConsoleHelper.WriteError("The user denied the request.");
+                    context.ExitCode = 1;
+                    return;
+                case "expired_token":
+                    Console.WriteLine();
+                    ConsoleHelper.WriteError("The device code expired before the user approved it.");
+                    context.ExitCode = 1;
+                    return;
+                default:
+                    Console.WriteLine();
+                    ConsoleHelper.WriteError($"Token request failed: {(int)tokenResponse.StatusCode} {tokenResponse.ReasonPhrase}");
+                    ConsoleHelper.WriteError(tokenBody);
+                    context.ExitCode = 1;
+                    return;
+            }
+        }
+
+        Console.WriteLine();
+        ConsoleHelper.WriteError("Timed out waiting for approval.");
+        context.ExitCode = 1;
+    }
+
+    private void SaveTokens(string tokenBody, string requestedScope)
+    {
+        using var doc = JsonDocument.Parse(tokenBody);
+        var root = doc.RootElement;
+        var store = new TokenStore
+        {
+            AccessToken = root.GetProperty("access_token").GetString(),
+            TokenType = root.TryGetProperty("token_type", out var tt) ? tt.GetString() : "Bearer",
+            ExpiresIn = root.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : 3600,
+            Scope = root.TryGetProperty("scope", out var sc) ? sc.GetString() : requestedScope,
+            RefreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null,
+            IdToken = root.TryGetProperty("id_token", out var it) ? it.GetString() : null,
+            IssuedAt = DateTimeOffset.UtcNow
+        };
+
+        TokenFile.Save(store, TokenFilePath);
+
+        ConsoleHelper.WriteSuccess("Token obtained successfully (device_code).");
+        ConsoleHelper.WriteInfo("access_token", ConsoleHelper.Truncate(store.AccessToken!, 60));
+        ConsoleHelper.WriteInfo("expires_in  ", $"{store.ExpiresIn}s (expires at {store.ExpiresAt.ToLocalTime():HH:mm:ss})");
+        ConsoleHelper.WriteInfo("scope       ", store.Scope ?? string.Empty);
+        ConsoleHelper.WriteInfo("saved to    ", TokenFilePath ?? TokenFile.DefaultPath);
+        if (store.RefreshToken is not null)
+        {
+            ConsoleHelper.WriteInfo("refresh_tkn ", ConsoleHelper.Truncate(store.RefreshToken, 40));
+        }
+        if (store.IdToken is not null)
+        {
+            ConsoleHelper.WriteInfo("id_token    ", ConsoleHelper.Truncate(store.IdToken, 60));
+            ConsoleHelper.PrintJwtClaims(store.IdToken);
+        }
+    }
+
+    private static string? ReadError(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// userinfo
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // userinfo
 // ---------------------------------------------------------------------------

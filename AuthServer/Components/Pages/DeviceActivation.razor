@@ -1,0 +1,43 @@
+@page "/account/device"
+@layout AuthServer.Components.Layout.PublicLayout
+@rendermode InteractiveServer
+
+<PageTitle>Device Activation - AuthServer</PageTitle>
+
+<MudPaper Class="pa-6" Elevation="2">
+    <MudText Typo="Typo.h5" Class="mb-1">Activate your device</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+        Enter the code shown on your device, then sign in to approve or deny the request.
+    </MudText>
+
+    @if (completed)
+    {
+        <MudAlert Severity="@resultSeverity">@resultMessage</MudAlert>
+    }
+    else
+    {
+        <MudTextField @bind-Value="userCode" Label="Device code" Placeholder="XXXX-XXXX"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" Immediate="true" />
+        <MudTextField @bind-Value="username" Label="Username"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="password" Label="Password" InputType="InputType.Password"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4" />
+
+        @if (pendingRequest is not null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Client <b>@pendingRequest.ClientId</b> is requesting: <span class="text-monospace">@pendingRequest.Scopes</span>
+            </MudAlert>
+        }
+
+        @if (errorMessage is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@errorMessage</MudAlert>
+        }
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApproveAsync" Disabled="busy">Approve</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="DenyAsync" Disabled="busy">Deny</MudButton>
+        </MudStack>
+    }
+</MudPaper>
