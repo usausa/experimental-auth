@@ -21,6 +21,9 @@ public sealed partial class AuthorizeCommand : ICommandHandler
 
     private static readonly TimeSpan CallbackTimeout = TimeSpan.FromSeconds(15);
 
+    // コールバックを受けたブラウザーに返す最小のページ
+    private static readonly byte[] CallbackPage = "<!DOCTYPE html><html><body>You can close this window.</body></html>"u8.ToArray();
+
     [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
     public string AuthServer { get; set; } = ServerUrls.AuthServer;
 
@@ -86,12 +89,10 @@ public sealed partial class AuthorizeCommand : ICommandHandler
         }
 
         // ブラウザと同じように Cookie を保持し、リダイレクトは自分で追う
-        using var handler = new HttpClientHandler
-        {
-            CookieContainer = new CookieContainer(),
-            AllowAutoRedirect = false,
-            CheckCertificateRevocationList = true
-        };
+        using var handler = new HttpClientHandler();
+        handler.CookieContainer = new CookieContainer();
+        handler.AllowAutoRedirect = false;
+        handler.CheckCertificateRevocationList = true;
         using var browser = new HttpClient(handler);
 
         // 1. セッションを確立する (本来はログイン画面。M3 後半で置き換える)
@@ -262,7 +263,7 @@ public sealed partial class AuthorizeCommand : ICommandHandler
     {
         if (String.Equals(responseMode, "query", StringComparison.Ordinal))
         {
-            if (response.StatusCode is not (HttpStatusCode.Found or HttpStatusCode.Redirect))
+            if (response.StatusCode != HttpStatusCode.Found)
             {
                 ConsoleHelper.WriteError($"Expected a redirect but got {(int)response.StatusCode} {response.ReasonPhrase}");
                 ConsoleHelper.WriteError(await response.Content.ReadAsStringAsync());
@@ -368,10 +369,9 @@ public sealed partial class AuthorizeCommand : ICommandHandler
                 parameters = ParseQuery(received.Request.Url?.Query ?? String.Empty);
             }
 
-            var body = Encoding.UTF8.GetBytes("<!DOCTYPE html><html><body>You can close this window.</body></html>");
             received.Response.ContentType = "text/html; charset=utf-8";
-            received.Response.ContentLength64 = body.Length;
-            await received.Response.OutputStream.WriteAsync(body);
+            received.Response.ContentLength64 = CallbackPage.Length;
+            await received.Response.OutputStream.WriteAsync(CallbackPage);
             received.Response.Close();
 
             (await deliveryTask).Dispose();

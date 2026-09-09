@@ -29,13 +29,13 @@ internal static class AuthorizeResponse
             .Select(v => new KeyValuePair<string, string>(v.Key, v.Value!))
             .ToList();
 
-    private static IResult Render(string redirectUri, string responseMode, List<KeyValuePair<string, string>> parameters) =>
+    private static IResult Render(string redirectUri, string responseMode, IEnumerable<KeyValuePair<string, string>> parameters) =>
         String.Equals(responseMode, FormPost, StringComparison.Ordinal)
             ? RenderFormPost(redirectUri, parameters)
             : RenderQuery(redirectUri, parameters);
 
     // 既存のクエリ文字列は保持したまま追記する (RFC 6749 §3.1.2 は redirect_uri がクエリを持つことを許容する)
-    private static IResult RenderQuery(string redirectUri, List<KeyValuePair<string, string>> parameters)
+    private static IResult RenderQuery(string redirectUri, IEnumerable<KeyValuePair<string, string>> parameters)
     {
         var builder = new UriBuilder(redirectUri);
         var appended = String.Join(
@@ -45,7 +45,7 @@ internal static class AuthorizeResponse
         return Results.Redirect(builder.Uri.AbsoluteUri);
     }
 
-    private static IResult RenderFormPost(string redirectUri, List<KeyValuePair<string, string>> parameters)
+    private static IResult RenderFormPost(string redirectUri, IEnumerable<KeyValuePair<string, string>> parameters)
     {
         var html = new StringBuilder();
         html.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Submitting...</title></head>");

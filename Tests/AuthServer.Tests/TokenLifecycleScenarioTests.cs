@@ -30,8 +30,8 @@ public sealed class TokenLifecycleScenarioTests : IClassFixture<AuthServerFactor
         Assert.Equal(HttpStatusCode.OK, (await Oauth.RevokeAsync(tokenClient, accessToken, "access_token")).Status);
         Assert.Equal(HttpStatusCode.Unauthorized, (await Oauth.UserInfoAsync(tokenClient, accessToken)).Status);
 
-        using var handler = new AutoRefreshHandler(factory.Server.CreateHandler(), tokenClient, accessToken, refreshToken);
-        using var client = new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(Oauth.Issuer) };
+        using var handler = new AutoRefreshHandler(tokenClient, accessToken, refreshToken);
+        var client = factory.CreateDefaultClient(new Uri(Oauth.Issuer), handler);
 
         using var response = await client.GetAsync(new Uri(Oauth.UserInfoPath, UriKind.Relative));
 
@@ -55,8 +55,8 @@ public sealed class TokenLifecycleScenarioTests : IClassFixture<AuthServerFactor
         await Oauth.RevokeAsync(tokenClient, accessToken, "access_token");
         await Oauth.RevokeAsync(tokenClient, refreshToken, "refresh_token");
 
-        using var handler = new AutoRefreshHandler(factory.Server.CreateHandler(), tokenClient, accessToken, refreshToken);
-        using var client = new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(Oauth.Issuer) };
+        using var handler = new AutoRefreshHandler(tokenClient, accessToken, refreshToken);
+        var client = factory.CreateDefaultClient(new Uri(Oauth.Issuer), handler);
 
         using var response = await client.GetAsync(new Uri(Oauth.UserInfoPath, UriKind.Relative));
 
@@ -73,8 +73,7 @@ internal sealed class AutoRefreshHandler : DelegatingHandler
     private readonly HttpClient tokenClient;
     private readonly SemaphoreSlim gate = new(1, 1);
 
-    public AutoRefreshHandler(HttpMessageHandler innerHandler, HttpClient tokenClient, string accessToken, string refreshToken)
-        : base(innerHandler)
+    public AutoRefreshHandler(HttpClient tokenClient, string accessToken, string refreshToken)
     {
         this.tokenClient = tokenClient;
         AccessToken = accessToken;
