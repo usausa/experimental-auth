@@ -374,6 +374,11 @@ SameSite=Lax（クライアントのサイトからのトップレベル遷移�
 寿命は `SessionLifetimeSeconds`（既定 8 時間、スライド式）です。ID Token の `auth_time` はコードの発行時刻ではなく
 このセッションのログイン時刻になります（`authorization_codes.auth_time`）。
 
+**エラーをクライアントへ返すか、認可サーバー側で表示するか**: パラメータ異常や認証失敗をクライアントへリダイレクトせず、
+認可サーバー自身の画面で表示する実装もあります（エラー内容を攻撃者に観測されにくくなる）。本サンプルは RFC 6749 §4.1.2.1 に従い、
+`redirect_uri` を検証できた後のエラーはリダイレクトで返します。返す先は登録済みの `redirect_uri` に限られるため、
+オープンリダイレクトにはなりません。
+
 **画面が要るため未対応の項目**: ログイン画面がないので、未ログインの認可要求には `login_required` を返します
 （`prompt=none` と同じ挙動）。`prompt=login` は `login_required`、`prompt=consent` は `consent_required`、
 `prompt=select_account` は `account_selection_required` を返します。`max_age` は判定だけ実装済みで、
@@ -903,7 +908,7 @@ https://client.example.com/callback
 | SEC-02 | PKCE 必須 | Authorization Code Flow | ✅ | S256 のみ許可。`code_challenge` 省略時はエラー |
 | SEC-03 | state パラメータ検証 | Authorization Endpoint | ✅ | CSRF 防止。サーバーは `state` を認可コードと共に保存し応答で返却、TestClient が送信値との一致を検証（RFC 6749 §10.12 の役割分担どおり） |
 | SEC-04 | 認可コード一回限り使用 | Token Endpoint | ✅ | `consumed_at` で消費済みを記録。再提示時はそのコードから派生した RT ファミリー（`source_code_hash`）をすべて失効。ローテーション後の旧 RT の再提示も同様にファミリー失効 |
-| SEC-05 | redirect_uri 完全一致検証 | Authorization Endpoint | ✅ | 登録済み URI との完全一致。トークン交換時にも再照合 |
+| SEC-05 | redirect_uri 完全一致検証 | Authorization Endpoint | ✅ | 登録済み URI との完全一致（前方一致・ワイルドカードは不可）。加えて `http` / `https` の絶対 URI でフラグメントを持たないことを確認し、`javascript:` / `data:` を弾く。トークン交換時にも再照合 |
 | SEC-06 | パスワードハッシュ化 | ユーザー管理 | ✅ | PBKDF2-SHA256 / 60 万回反復 + `FixedTimeEquals` |
 | SEC-07 | トークン有効期限 | JWT | ✅ | すべて `AuthServer` セクションで設定可能。既定値は §8.3 の推奨値（アクセストークン 15 分、リフレッシュトークン 7 日（無操作）/ 30 日（絶対）、認可コード 2 分、デバイスコード 10 分） |
 | SEC-08 | 暗号学的乱数使用 | コード・トークン生成 | ✅ | `RandomNumberGenerator.GetBytes(32)` を使用 |

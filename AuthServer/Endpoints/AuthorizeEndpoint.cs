@@ -324,7 +324,9 @@ public static class AuthorizeEndpoint
 
     private static bool IsRegisteredRedirectUri(Client client, string redirectUri)
     {
-        if (String.IsNullOrEmpty(client.RedirectUris))
+        // 完全一致に加えてスキームも確認する。登録内容が汚染された場合の保険で、
+        // javascript: や data: の URI をリダイレクト先として使えないようにする
+        if (String.IsNullOrEmpty(client.RedirectUris) || !IsSafeRedirectUri(redirectUri))
         {
             return false;
         }
@@ -342,6 +344,14 @@ public static class AuthorizeEndpoint
         // 完全一致のみ (RFC 6749 §3.1.2.3 / SEC-05)
         return Array.Exists(allowed, u => String.Equals(u, redirectUri, StringComparison.Ordinal));
     }
+
+    // リダイレクト先として許可するのは http / https の絶対 URI で、フラグメントを持たないものだけ (RFC 6749 §3.1.2)。
+    // ネイティブアプリの独自スキーム (RFC 8252) に対応する場合はここを広げる。
+    private static bool IsSafeRedirectUri(string redirectUri) =>
+        Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri) &&
+        (String.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) ||
+         String.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)) &&
+        String.IsNullOrEmpty(uri.Fragment);
 
     private static string? ValidatePkce(string codeChallenge, string codeChallengeMethod)
     {

@@ -55,6 +55,8 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 - [x] レート制限（`SPEC.md` SEC-09）。クライアント IP ごとの固定ウィンドウ。`/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、
       トークン系は `TokenPermitLimit`（既定 60/分）。超過は 429 + `Retry-After`。Blazor の承認画面（SignalR）は対象外（2026-09-09）
 - [x] CORS（`SPEC.md` SEC-10）。`Cors:AllowedOrigins` のオリジンだけにプロトコルエンドポイントを許可し、Discovery / JWKS は任意オリジンの GET を許可（2026-09-09）
+- [x] `redirect_uri` のスキーム検証（`javascript:` / `data:` を弾き、`http` / `https` の絶対 URI でフラグメントなしを要求）。
+      認可エンドポイントの脆弱実装対策として追加（`SPEC.md` SEC-05、2026-09-09）
 - [x] 自動テスト。`Tests/AuthServer.Tests`（xUnit + WebApplicationFactory、一時 SQLite、seed 有効）と `Tests/ResourceServer.Tests`（AuthServer の TestServer を JWKS の取得先に差し替えた結合テスト）。`dotnet test AuthServer.slnx` で実行（2026-09-09）
 
 ---
@@ -113,9 +115,17 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] 結合テスト: 認可コード再利用で拒否確認（`invalid_grant`）
 - [x] 🌐 `/connect/authorize` の GET（ブラウザリダイレクト）実装（M3a。`response_mode` は `query` / `form_post`、エラーは RFC 6749 §4.1.2.1 に従って `redirect_uri` へ返す）
 - [ ] 🌐 `/account/login` Blazor ページ実装 ※M3b
+- [ ] 🌐 サーバー側セッションストア（`ITicketStore`）※M3b の前提。現在はクレームをセッション Cookie に直接入れており、
+      サーバー側にセッションの記録がない。管理画面からの強制ログアウト、Back-Channel Logout の `sid`、
+      ログイン中セッションの一覧はいずれもこれがないと作れない
+- [ ] 🌐 サンプルクライアント（Blazor BFF か SPA）※M3b。現状 CORS 設定と `form_post` に実際の利用者がいない。
+      ブラウザで方式 A を通しで流せるようになる。Blazor 側のトークン保管（`IJwtAccessor` 相当）もここで検討する
 - [ ] 🌐 TestClient: ブラウザを起動して実際のログインを挟む ※M3b（`cmd /c start <認可 URL>` で開く。`&` を `^&` にエスケープする必要がある。
       認可コードの受信は `authorize` コマンドのローカル HTTP リスナーをそのまま使える）
 - [x] エンドユーザーのセッション（`/account/session` で Cookie を発行 / 確認 / 破棄。`SessionLifetimeSeconds`、HttpOnly / Secure / SameSite=Lax）。ログイン画面もこのエンドポイントを使う（M3a）
+- [ ] TestClient: 401 を受けたらリフレッシュして元の要求を 1 回だけリトライする `DelegatingHandler`（サーバー側がこの流れを支えられることは
+      `TokenLifecycleScenarioTests` で確認済み）。現在は有効期限切れを検出して `refresh` の実行を促すだけ。要求の再送にはクローンが要り、
+      同時多発の 401 でリフレッシュが多重実行されないよう直列化も要る
 - [x] TestClient: 方式 A の実行（`authorize` コマンド。セッション確立 → GET 認可 → ローカル HTTP リスナーで `redirect_uri` を受信 → トークン交換 → `state` / `nonce` 検証）
 - [x] `state` の検証（サーバーは保存・返却、TestClient が送信値との一致を検証。方式 A では redirect 先で同様に検証する）
 
@@ -210,7 +220,9 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 - [x] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`replay_guard` に一回限りの値（kind + value）を期限つきで記録。`private_key_jwt` の `jti`（RFC 7523 §3）と認可要求の `nonce` に適用し、再提示は `invalid_client` / `invalid_request` で拒否して監査ログ `replay_detected` に記録。AT の `jti` は失効リスト、認可コード / RT の再提示はファミリー失効（SEC-04）で扱う（M2'）
 - [x] 🌐 ★★★ **`prompt` パラメーター対応**（`none`）と `max_age` — OIDC Core §3.1.2.1。`prompt=none` は既存セッションを検出し、なければ `login_required`（M3a）
 - [ ] 🌐 `prompt=login` / `consent` / `select_account` の本来の挙動 ※M3b。現在はそれぞれ `login_required` / `consent_required` / `account_selection_required` を返すだけで、再認証・同意・アカウント選択の画面がない
-- [ ] 🌐 ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。リダイレクト型の認可要求を保護する仕様のため方式 A が前提。コスト: 中 ※M3
+- [ ] ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。`POST /connect/par` がクライアント認証つきで認可パラメーターを受け取り、
+      `urn:ietf:params:oauth:request_uri:<id>` を `expires_in`（10 分程度）つきで返す。認可エンドポイントは `request_uri` だけを受けて
+      保存済みのパラメーターを復元する。パラメーターが URL に出ないため改ざんも防げる。方式 A ができたので画面なしで実装できる。コスト: 中
 - [x] ★★☆ **複数署名アルゴリズム対応（ES256）** — RFC 7518。管理画面でローテーション時に RS256 / ES256 を選択。JWKS・検証・Discovery を対応（M2）
 
 ### B-2. 高優先（実際のシステムで頻出）
@@ -220,6 +232,8 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 - [x] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。`openid` 要求時は必須（`RequireNonce`）、空白を含まない印字可能 ASCII 512 文字以内、同一クライアントでの再利用を拒否（認可コード + ID Token の寿命の間記録）。TestClient は ID Token の `nonce` 一致を検証（M2'）
 - [ ] 🌐 ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※M3
 - [x] 🖥️ ★★☆ **監査ログ** — `audit_logs` + `/audit-logs` 画面（イベント / 結果 / クライアント / 自由検索で絞り込み）。保持期間は `AuditLogRetentionDays`（M2'）
+- [ ] 🖥️ ★★☆ **パスキー / WebAuthn（FIDO2）** — ユーザーごとに公開鍵を登録し、認証時に署名を検証する。ログイン画面が前提で、
+      検証は外部ライブラリに依存する。`amr` を `["pwd"]` 固定から実際の認証方式に変える必要がある。コスト: 高
 - [ ] 🖥️ ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。検証は方式 B の `POST /connect/authorize` に `totp` を足せば API で完結し、登録（QR 表示）だけ画面が必要。コスト: 中
 - [ ] 🖥️ ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。確認リンクの着地画面とメール送信基盤が必要。コスト: 中
 
