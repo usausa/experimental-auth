@@ -42,7 +42,8 @@ dotnet run -- <command> [options]
 | コマンド | 説明 |
 |---------|------|
 | `discovery` | AuthServer の OIDC Discovery エンドポイントを取得・表示する |
-| `token` | アクセストークンを取得してローカルに保存する |
+| `token` | アクセストークンを取得してローカルに保存する(方式 B / client_credentials) |
+| `authorize` | 方式 A(ブラウザリダイレクト)でトークンを取得する。ローカル HTTP リスナーで `redirect_uri` を受ける |
 | `api` | 保存済みアクセストークンで ResourceServer の保護 API を呼び出す |
 | `refresh` | リフレッシュトークンで新しいアクセストークンを取得する |
 | `userinfo` | UserInfo エンドポイントからユーザー情報を取得する |
@@ -176,7 +177,32 @@ dotnet run -- device --scope "openid profile email api.read"
 dotnet run -- api --resource https://localhost:5180 --path /api/protected
 ```
 
-#### ユースケース 6: private_key_jwt でクライアント認証する(RFC 7523)
+#### ユースケース 6: 方式 A(ブラウザリダイレクト)でトークンを取得する
+
+標準の Authorization Code Flow です。AuthServer にログイン画面がまだないため、`authorize` コマンドが
+ブラウザの代わりに `/account/session` でセッションを確立してから `GET /connect/authorize` をたどります。
+リダイレクト先はローカル HTTP リスナーが受け取るので、`redirect_uri` に実際に認可コードが届くところまで確認できます。
+
+```bash
+# 1. 方式 A でトークンを取得(セッション確立 → 認可 → コールバック受信 → トークン交換)
+dotnet run -- authorize --scope "openid profile email api.read"
+
+# 2. 認可応答を form_post で受け取る(認可コードが URL に残らない)
+dotnet run -- authorize --response-mode form_post
+
+# 3. リスナーを使わず、リダイレクト先の URL から直接読み取る
+dotnet run -- authorize --no-listen
+
+# 4. 取得したアクセストークンで保護 API を呼び出す
+dotnet run -- api --path /api/protected
+```
+
+> **HTTP クライアントの使い分け**
+> `authorize` コマンドは Cookie を保持しリダイレクトを自動で追わない専用の `HttpClient` を持ちます。
+> 保護 API を呼ぶ `api` コマンドとは別インスタンスなので、セッション Cookie がリソースサーバーへの
+> 要求に混ざりません。トークンを取得するクライアントと API を呼ぶクライアントは分けておくのが安全です。
+
+#### ユースケース 7: private_key_jwt でクライアント認証する(RFC 7523)
 
 シークレットの代わりに秘密鍵で署名した JWT(client_assertion)でクライアントを認証します。
 `test-jwt-client` は ES256 の公開鍵が登録済みで、対応する開発用の秘密鍵を TestClient が同梱しています。
@@ -210,6 +236,23 @@ dotnet run -- assertion --client-id test-jwt-client
 | `--username` | `-u` | — | ユーザー名(`authorization_code` グラント用) |
 | `--password` | `-p` | — | パスワード(`authorization_code` グラント用) |
 | `--resource` | — | — | Resource Indicator(RFC 8707)。対象リソースサーバーの audience URI。省略時は既定のリソースサーバー |
+| `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
+
+#### `authorize`
+
+| オプション | 短縮形 | デフォルト値 | 説明 |
+|-----------|-------|------------|------|
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
+| `--client-id` | — | `test-webapp` | クライアント ID |
+| `--client-secret` | — | `webapp-secret` | クライアントシークレット |
+| `--auth-method` | — | `client_secret_post` | トークン要求時のクライアント認証方式 |
+| `--client-key` | — | 同梱の開発用鍵 | `private_key_jwt` で使う秘密 JWK ファイル |
+| `--scope` | `-s` | `openid profile email api.read` | スコープ(スペース区切り) |
+| `--username` | `-u` | `alice` | セッション確立に使うユーザー名 |
+| `--password` | `-p` | `password` | セッション確立に使うパスワード |
+| `--redirect-uri` | — | `http://localhost:5173/callback` | クライアントに登録済みのリダイレクト URI |
+| `--response-mode` | — | `query` | 認可応答の返し方 (`query` \| `form_post`) |
+| `--no-listen` | — | (指定なし) | ローカル HTTP リスナーを使わず、リダイレクト先 URL から直接読み取る |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン保存先パス |
 
 #### `api`
@@ -286,7 +329,9 @@ dotnet test AuthServer.slnx
 | `/.well-known/openid-configuration` | GET | ✅ 実装済み | 1 | OIDC Discovery ドキュメントを返す |
 | `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
 | `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` / `device_code` グラント。クライアント認証は `client_secret_post` / `client_secret_basic` / `private_key_jwt` / `none` で、登録済みの方式を強制) |
-| `/connect/authorize` | POST | ✅ 実装済み | 2 | ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
+| `/connect/authorize` | GET | ✅ 実装済み | 2 | 方式 A。セッション Cookie で利用者を判断し、`redirect_uri` へ認可コードを返す(`response_mode` は `query` / `form_post`) |
+| `/connect/authorize` | POST | ✅ 実装済み | 2 | 方式 B。ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
+| `/account/session` | POST/GET/DELETE | ✅ 実装済み | 2 | エンドユーザーのログインセッション。POST でログインして Cookie を発行、DELETE で破棄 |
 | `/connect/userinfo` | GET | ✅ 実装済み | 2 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
 | `/connect/revoke` | POST | ✅ 実装済み | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
 | `/connect/introspect` | POST | ✅ 実装済み | 4 | トークンのアクティブ状態・メタ情報を返す(RFC 7662) |
@@ -297,12 +342,12 @@ dotnet test AuthServer.slnx
 | `/audit-logs` | Blazor | ✅ 実装済み | — | 🖥️ 監査ログの確認画面(認証失敗・トークン発行 / 拒否・リプレイ検出・管理操作など) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
-> **`/connect/authorize` の設計について**
-> 本サーバーは API 専用サーバーとして実装しているため、`/connect/authorize` は
-> 標準のブラウザリダイレクト方式(GET)ではなく、クライアントが資格情報を直接送信する
-> POST 方式のみを提供しています。この方式ではユーザーのパスワードがクライアントを
-> 経由するため、信頼モデルとしては ROPC 相当です。
-> 標準方式との差異は `SPEC.md` §6.3 を参照してください。
+> **`/connect/authorize` の 2 つの方式について**
+> GET は標準のブラウザリダイレクト方式(方式 A)で、セッション Cookie を見て `redirect_uri` へ認可コードを返します。
+> POST は API 専用方式(方式 B)で、クライアントが `username` / `password` を直接送信します。方式 B は
+> ユーザーのパスワードがクライアントを経由するため、信頼モデルとしては ROPC 相当です。
+> ログイン画面は未実装なので、方式 A のセッションは `/account/session` で確立します。
+> 詳細は `SPEC.md` §6.3 を参照してください。
 
 > **トークン失効の反映範囲（方式 3）**
 > `/connect/revoke` で失効させたアクセストークンは、AuthServer 自身のエンドポイント（UserInfo / Introspection）では

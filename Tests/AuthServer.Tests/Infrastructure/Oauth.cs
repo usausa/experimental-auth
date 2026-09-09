@@ -25,6 +25,7 @@ internal static class Oauth
     public const string RevokePath = "/connect/revoke";
     public const string IntrospectPath = "/connect/introspect";
     public const string DeviceAuthorizePath = "/connect/device/authorize";
+    public const string SessionPath = "/account/session";
     public const string DiscoveryPath = "/.well-known/openid-configuration";
     public const string JwksPath = "/.well-known/jwks.json";
 
@@ -192,6 +193,49 @@ internal static class Oauth
     }
 
     public static string NewNonce() => "n-" + Guid.NewGuid().ToString("N");
+
+    // /account/session: セッション Cookie の発行・確認・破棄
+    public static Task<OauthResponse> SignInAsync(HttpClient client, string username = "alice", string password = "password") =>
+        PostFormAsync(client, SessionPath, Form(("username", username), ("password", password)));
+
+    public static Task<OauthResponse> QuerySessionAsync(HttpClient client) => GetAsync(client, SessionPath);
+
+    public static Task<OauthResponse> SignOutAsync(HttpClient client) => SendAsync(client, HttpMethod.Delete, SessionPath);
+
+    // GET /connect/authorize (方式 A) の URL を組み立てる。値が null のパラメーターは送らない。
+    public static string BuildAuthorizeUrl(params (string Key, string? Value)[] parameters) =>
+        AuthorizePath + "?" + String.Join(
+            '&',
+            parameters
+                .Where(p => p.Value is not null)
+                .Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value!)}"));
+
+    // リダイレクト応答の Location からクエリパラメーターを取り出す
+    public static Dictionary<string, string> ParseRedirect(string? location)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (String.IsNullOrEmpty(location))
+        {
+            return result;
+        }
+
+        var separator = location.IndexOf('?', StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            return result;
+        }
+
+        foreach (var pair in location[(separator + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var index = pair.IndexOf('=', StringComparison.Ordinal);
+            if (index > 0)
+            {
+                result[Uri.UnescapeDataString(pair[..index])] = Uri.UnescapeDataString(pair[(index + 1)..]);
+            }
+        }
+
+        return result;
+    }
 
     public static (string Verifier, string Challenge) CreatePkce()
     {

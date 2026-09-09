@@ -26,7 +26,8 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOpt
         string? codeChallenge,
         string? codeChallengeMethod,
         string? nonce,
-        string? state)
+        string? state,
+        DateTime authTime)
     {
         var code = GenerateCode();
         var hash = HashCode(code);
@@ -37,10 +38,10 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOpt
         await connection.ExecuteAsync("""
             INSERT INTO authorization_codes
                 (code_hash, client_id, user_id, redirect_uri, scopes,
-                 code_challenge, code_challenge_method, nonce, state, expires_at, created_at)
+                 code_challenge, code_challenge_method, nonce, state, expires_at, created_at, auth_time)
             VALUES
                 (@CodeHash, @ClientId, @UserId, @RedirectUri, @Scopes,
-                 @CodeChallenge, @CodeChallengeMethod, @Nonce, @State, @ExpiresAt, @CreatedAt)
+                 @CodeChallenge, @CodeChallengeMethod, @Nonce, @State, @ExpiresAt, @CreatedAt, @AuthTime)
             """,
             new
             {
@@ -54,7 +55,8 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOpt
                 Nonce = nonce,
                 State = state,
                 ExpiresAt = expiresAt.ToString("o", CultureInfo.InvariantCulture),
-                CreatedAt = now.ToString("o", CultureInfo.InvariantCulture)
+                CreatedAt = now.ToString("o", CultureInfo.InvariantCulture),
+                AuthTime = authTime.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture)
             });
 
         return code;
@@ -69,7 +71,7 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOpt
 
         var row = await connection.QueryFirstOrDefaultAsync<dynamic>("""
             SELECT client_id, user_id, redirect_uri, scopes,
-                   code_challenge, code_challenge_method, nonce, expires_at, created_at, consumed_at
+                   code_challenge, code_challenge_method, nonce, expires_at, created_at, consumed_at, auth_time
             FROM authorization_codes WHERE code_hash = @Hash
             """, new { Hash = hash });
 
@@ -86,7 +88,8 @@ public sealed class AuthorizationCodeService(DbConnectionFactory dbFactory, IOpt
             IsNull((object?)row.code_challenge) ? null : (string?)row.code_challenge,
             IsNull((object?)row.code_challenge_method) ? null : (string?)row.code_challenge_method,
             IsNull((object?)row.nonce) ? null : (string?)row.nonce,
-            ParseUtc((string)row.created_at),
+            // v12 より前に発行されたコードは auth_time を持たないため、発行時刻で代用する
+            ParseUtc((string)(IsNull((object?)row.auth_time) ? row.created_at : row.auth_time)),
             hash);
 
         if (!IsNull((object?)row.consumed_at))
@@ -174,7 +177,8 @@ public sealed record AuthorizationCodeInfo(
     string? CodeChallenge,
     string? CodeChallengeMethod,
     string? Nonce,
-    // ユーザー認証時刻。方式 B では資格情報の検証直後にコードを発行するため created_at と一致する (ID Token の auth_time)
+    // ユーザー認証時刻 (ID Token の auth_time)。方式 B は資格情報の検証直後に発行するので created_at と一致し、
+    // 方式 A は既存セッションのログイン時刻を引き継ぐため created_at より前になりうる
     DateTime AuthTime,
     // コードのハッシュ。発行したリフレッシュトークンの source_code_hash に記録し、ファミリー単位の失効に使う
     string CodeHash);

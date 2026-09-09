@@ -109,6 +109,8 @@ public static class AuditEvents
     public const string TokenIssued = "token_issued";
     public const string TokenDenied = "token_denied";
     public const string Authorize = "authorize";
+    public const string SessionCreated = "session_created";
+    public const string SessionEnded = "session_ended";
     public const string DeviceAuthorize = "device_authorize";
     public const string DeviceApproved = "device_approved";
     public const string DeviceDenied = "device_denied";

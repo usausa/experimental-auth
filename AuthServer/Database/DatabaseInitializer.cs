@@ -182,7 +182,10 @@ public static class DatabaseInitializer
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, claim_type)
             )
-            """)
+            """),
+        // v12: 認可コード発行時点のユーザー認証時刻 (ID Token の auth_time)。
+        // 方式 A ではセッションのログイン時刻を引き継ぐため created_at とは一致しない
+        (12, "ALTER TABLE authorization_codes ADD COLUMN auth_time TEXT")
     ];
 
     public static void Initialize(DbConnectionFactory factory)

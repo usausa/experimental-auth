@@ -167,7 +167,7 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-01 | メタデータ | OpenID Provider Configuration | `/.well-known/openid-configuration` | GET | **必須** | OIDC Discovery §4 | 1 | ✅ | サーバーメタデータ公開 |
 | E-02 | メタデータ | JWK Set | `/.well-known/jwks.json` | GET | **必須** | RFC 7517 | 1 | ✅ | 署名検証用公開鍵 |
 | E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行。クライアント認証は `client_secret_basic` / `client_secret_post` / `private_key_jwt`（RFC 7523）/ `none` で、登録済みの方式を強制（§6.3） |
-| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。**API 専用方式のみ実装**（§6.3 参照）。標準のブラウザリダイレクト方式 (GET) は未実装 |
+| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | ✅ | 認可コード発行。GET は方式 A（セッション Cookie + リダイレクト、`response_mode` は `query` / `form_post`）、POST は方式 B（資格情報を直送し JSON で返す）。§6.3 参照 |
 | E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。POST 版は未実装 |
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
 | E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
@@ -175,7 +175,8 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-09 | デバイス | Device Authorization | `/connect/device/authorize` | POST | 任意 | RFC 8628 §3.1 | 5 | ✅ | デバイスコード発行。公開クライアント（`test-device`）は `client_id` のみで利用可 |
 | E-10 | クライアント管理 | Dynamic Registration | `/connect/register` | POST | 任意 | RFC 7591 | 5 | 🔲 | クライアント登録 |
 | E-11 | クライアント管理 | Client Configuration | `/connect/register/{client_id}` | GET/PUT/DELETE | 任意 | RFC 7592 | 5 | 🔲 | クライアント管理 |
-| E-12 | UI (Blazor) | Login | `/account/login` | — (Blazor) | 標準方式で必須 | — | 2 | ⏸ | ユーザー認証画面。API 専用方式では不要（§6.3 参照） |
+| E-12 | UI (Blazor) | Login | `/account/login` | — (Blazor) | 方式 A で必須 | — | 2 | 🔲 | ユーザー認証画面。未実装のため、方式 A のセッションは E-19 で確立する（§6.3 参照） |
+| E-19 | セッション | User Session | `/account/session` | POST / GET / DELETE | 任意 | — | 2 | ✅ | エンドユーザーのログインセッション。POST でログインして Cookie を発行、GET で確認、DELETE で破棄。ログイン画面もこのエンドポイントを使う |
 | E-13 | UI (Blazor) | Consent | `/account/consent` | — (Blazor) | 任意(推奨) | — | 3 | 🔲 | スコープ同意画面 |
 | E-14 | UI (Blazor) | Device Code Input | `/account/device` | — (Blazor) | 任意 | — | 5 | ✅ | 🖥️ user_code と資格情報を 1 フォームで受け取る承認画面。リダイレクト・セッション不要 |
 | E-15 | UI (Blazor) | User Registration | `/account/register` | — (Blazor) | 任意 | — | 5 | 🔲 | ユーザー登録画面 |
@@ -184,6 +185,10 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-18 | UI (Blazor) | Consent Management | `/account/consents` | — (Blazor) | 任意 | — | 5 | 🔲 | 同意管理画面 |
 
 管理 UI として `/`（リソースサーバー管理）、`/users`（ユーザー管理・ユーザーごとのカスタムクレーム値）、`/signing-keys`（署名鍵）、`/claims`（カスタムクレーム定義）、`/audit-logs`（監査ログ）を MudBlazor で実装済みです。これらは OAuth/OIDC のプロトコル面ではなく運用管理用のため、上表には含めていません。
+
+**意図的に設けていないエンドポイント**: 標準にない独自エンドポイントは追加しません。特にアクセストークンの再発行は
+`/connect/refresh` のような独立したエンドポイントではなく、トークンエンドポイントの `grant_type=refresh_token`（G-03）で扱います（RFC 6749 §6）。
+同様に、リフレッシュトークンを `Authorization: Bearer` ヘッダーで送る独自方式も採らず、常にフォームパラメーターとして受け取ります。
 
 ### 4.2 Token Endpoint 対応 Grant Type
 
@@ -335,18 +340,44 @@ TestClient                    AuthServer                   ResourceServer
 | authorization_codes テーブル | インフラ | 共通 | ✅ | 認可コードの保存・取得・削除 |
 | refresh_tokens テーブル | インフラ | 共通 | ✅ | リフレッシュトークンの保存・取得・更新 |
 | E-04 `/connect/authorize` (POST) | エンドポイント | B | ✅ | パラメータ検証、PKCE、資格情報検証、認可コードを JSON 返却 |
-| E-04 `/connect/authorize` (GET) | エンドポイント | A | 🔲 | パラメータ検証、PKCE、ログインへリダイレクト |
-| E-12 `/account/login` (Blazor) | UI | A | 🔲 | ユーザー名・パスワード認証画面 |
+| E-04 `/connect/authorize` (GET) | エンドポイント | A | ✅ | パラメータ検証、PKCE、セッション判定、`redirect_uri` へリダイレクト（`response_mode` は `query` / `form_post`） |
+| E-19 `/account/session` | エンドポイント | A | ✅ | ログインしてセッション Cookie を発行 / 確認 / 破棄 |
+| E-12 `/account/login` (Blazor) | UI | A | 🔲 | ユーザー名・パスワード認証画面。未実装のため、未ログインの認可要求は `login_required` を返す |
 | E-03 `/connect/token` (authorization_code) | エンドポイント | 共通 | ✅ | 認可コード → トークン交換、PKCE 検証 |
 | E-03 `/connect/token` (refresh_token) | エンドポイント | 共通 | ✅ | リフレッシュトークンでのトークン再発行 |
 | UC-S07〜UC-S12 | 内部処理 | 共通 | ✅ | ユーザー認証、認可コード、PKCE、リフレッシュトークン |
 
-#### 方式 A: 標準のブラウザリダイレクト方式（未実装・将来対象）
+#### 方式 A: 標準のブラウザリダイレクト方式（実装済み。ログイン画面のみ未実装）
 
 RFC 6749 §4.1 / OIDC Core §3.1 に沿った本来のフローです。ユーザーの資格情報が
-クライアントを一切経由しない点が本質で、これが Authorization Code Flow を
-ROPC より安全にしている理由です。学習目的としてはこちらの実装価値が高く、
-`TODO.md` の「仕様と実装の乖離」に計上しています。
+クライアントを一切経由しない点が本質で、これが Authorization Code Flow を ROPC より安全にしている理由です。
+
+`GET /connect/authorize` はセッション Cookie で利用者を判断し、`redirect_uri` へ認可コードを返します。
+
+```
+GET /connect/authorize
+  ?response_type=code & client_id & redirect_uri & scope & state & nonce
+  & code_challenge & code_challenge_method=S256
+  [& response_mode & prompt & max_age]
+                    ↓
+  セッションあり → 302 redirect_uri?code=...&state=...     (response_mode=form_post なら自動送信フォームを返す)
+  セッションなし → 302 redirect_uri?error=login_required&state=...
+```
+
+**エラーの返し方 (RFC 6749 §4.1.2.1)**: `client_id` と `redirect_uri` が確定するまではリダイレクトしません。
+未知のクライアントや未登録の `redirect_uri` は直接 JSON エラーで返し、それ以降のエラーだけを
+`redirect_uri` に `error` / `error_description` / `state` として載せます。攻撃者が指定した URI へ
+リダイレクトしてしまわないための区別です。
+
+**セッション**: `/account/session` (E-19) が Cookie を発行します。`AuthServer.Session` は HttpOnly / Secure /
+SameSite=Lax（クライアントのサイトからのトップレベル遷移で送られる必要があるため Strict にはできない）で、
+寿命は `SessionLifetimeSeconds`（既定 8 時間、スライド式）です。ID Token の `auth_time` はコードの発行時刻ではなく
+このセッションのログイン時刻になります（`authorization_codes.auth_time`）。
+
+**画面が要るため未対応の項目**: ログイン画面がないので、未ログインの認可要求には `login_required` を返します
+（`prompt=none` と同じ挙動）。`prompt=login` は `login_required`、`prompt=consent` は `consent_required`、
+`prompt=select_account` は `account_selection_required` を返します。`max_age` は判定だけ実装済みで、
+超過時は再認証できないため `login_required` になります。
 
 #### 方式 B: API 専用方式（実装済み）
 
@@ -930,6 +961,7 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 | `AuthorizationCodeLifetimeSeconds` | 120（2 分） | 認可コード | RFC 6749 §4.1.2 は最大 10 分を推奨。方式 B は取得直後に交換するため短くて良く、方式 A でも数十秒で足りる |
 | `DeviceCodeLifetimeSeconds` | 600（10 分） | デバイスコード / ユーザーコード | 別デバイスでブラウザを開きコードを入力する時間。RFC 8628 の例は 1800 秒だが、user_code の総当たり耐性のため短めにした |
 | `DeviceCodePollIntervalSeconds` | 5 | デバイスフローのポーリング間隔 | RFC 8628 §3.2 の既定値 |
+| `SessionLifetimeSeconds` | 28800（8 時間） | ログインセッション (SSO セッション) | トークンとは別軸で、ブラウザで「ログインしたままにする」期間。要求のたびに延長するスライド式。勤務時間相当の 8 時間を既定にした |
 
 当初仕様（SEC-07 の旧値: RT 30 日 / 認可コード 10 分）との差は次の判断によるものです。
 
@@ -960,6 +992,7 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
     "urn:ietf:params:oauth:grant-type:device_code"
   ],
   "response_types_supported": ["code"],
+  "response_modes_supported": ["query", "form_post"],
   "token_endpoint_auth_methods_supported": [
     "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
   ],
@@ -989,7 +1022,6 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 
 未反映の項目: `end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ。
 いずれも対応エンドポイントが未実装のためです。
-`response_modes_supported` は方式 B（JSON 応答）に該当する標準値がないため、方式 A 実装時に追加します。
 `request_uri_parameter_supported` は省略時の既定値が `true` のため、未対応を明示するために `false` を出力しています。
 
 なお `authorization_endpoint` は POST 専用（§6.3 方式 B）であり、
@@ -1231,6 +1263,9 @@ CREATE TABLE user_claims (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, claim_type)
 );
+-- v12: 認可コード発行時点のユーザー認証時刻 (ID Token の auth_time)。
+-- 方式 A はセッションのログイン時刻を引き継ぐため created_at とは一致しない
+ALTER TABLE authorization_codes ADD COLUMN auth_time TEXT;
 ```
 
 **実装との差異** (`AuthServer/Database/DatabaseInitializer.cs`):
@@ -1358,6 +1393,7 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 | `AuthServer` | `ClientAssertionMaxLifetimeSeconds` | 300 | `private_key_jwt` のクライアントアサーションに許容する寿命（`exp` − `iat`） |
 | `AuthServer` | `RequireNonce` | true | `openid` を含む認可要求に `nonce` を必須にする |
 | `AuthServer` | `AuditLogRetentionDays` | 90 | 監査ログの保持期間。保守ジョブがこれより古いエントリを削除 |
+| `AuthServer` | `SessionLifetimeSeconds` | 28800 | ログインセッション Cookie の寿命（スライド式） |
 | `RateLimiting` | `Enabled` | true | レート制限の有効 / 無効（結合テストでは無効にする） |
 | `RateLimiting` | `WindowSeconds` | 60 | 固定ウィンドウの長さ |
 | `RateLimiting` | `AuthenticationPermitLimit` | 10 | `/connect/authorize` のウィンドウあたり許可数（IP ごと）。0 以下で無制限 |
@@ -1387,7 +1423,8 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 ### 13.1 自動テスト
 
 `Tests/AuthServer.Tests`（xUnit + `WebApplicationFactory`）が AuthServer を TestServer 上で起動し、Discovery / クライアント認証（4 方式 + `jti` リプレイ）/
-方式 B の認可コードフロー（`nonce` 厳密検証、PKCE、コード再利用のファミリー失効）/ リフレッシュトークンのローテーションとリプレイ /
+方式 A / 方式 B の認可コードフロー（リダイレクト応答とエラーリダイレクト、`response_mode`、`prompt`、`max_age`、セッション Cookie、
+`nonce` 厳密検証、PKCE、コード再利用のファミリー失効）/ リフレッシュトークンのローテーションとリプレイ /
 失効・検査 / Device Flow / Resource Indicators / カスタムクレーム / レート制限 / CORS / 監査ログとリプレイ記録を検証します。
 DB はテストクラスごとに独立した一時ディレクトリの SQLite（`Data:Directory`）で、seed を有効にし、レート制限は既定で無効にします。
 

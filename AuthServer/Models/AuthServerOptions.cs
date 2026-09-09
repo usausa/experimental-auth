@@ -55,4 +55,7 @@ public sealed class AuthServerOptions
 
     // 監査ログの保持期間 (日)。保守ジョブがこれより古いエントリを削除する
     public int AuditLogRetentionDays { get; set; } = 90;
+
+    // エンドユーザーのログインセッション (SSO セッション) の寿命 (秒)。要求のたびに延長する (スライド式)
+    public int SessionLifetimeSeconds { get; set; } = 28800;
 }

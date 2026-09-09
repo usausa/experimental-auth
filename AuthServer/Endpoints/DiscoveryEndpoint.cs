@@ -60,6 +60,7 @@ public static class DiscoveryEndpoint
             jwks_uri = $"{issuer}/.well-known/jwks.json",
             grant_types_supported = new[] { "client_credentials", "authorization_code", "refresh_token", DeviceAuthorizationEndpoint.GrantType },
             response_types_supported = new[] { "code" },
+            response_modes_supported = AuthorizeResponse.SupportedResponseModes,
             token_endpoint_auth_methods_supported = ClientAuthenticator.SupportedAuthMethods,
             token_endpoint_auth_signing_alg_values_supported = ClientAuthenticator.SupportedAssertionAlgorithms,
             revocation_endpoint_auth_methods_supported = ClientAuthenticator.SupportedAuthMethods,

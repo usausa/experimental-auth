@@ -22,7 +22,8 @@
 | M2 | API-only 候補の一部: 鍵の事前公開（2 段階ローテーション）、Device Authorization Grant（承認画面 🖥️ + TestClient `device`）、Resource Indicators（RFC 8707、トークン要求時）、ES256、トークン有効期限の全設定化と推奨値（`SPEC.md` §8.3） | ✅ 完了（2026-09-05） |
 | M2' | API-only 追加分（2026-09-06 に前倒し）: JWT Replay 検出（`private_key_jwt` クライアント認証 + `jti` の一回性、`replay_guard` テーブル）、登録済みクライアント認証方式の強制、`nonce` の厳密検証、監査ログ + 確認画面 🖥️（`/audit-logs`）、カスタムクレーム + 管理画面 🖥️（`/claims`、Users 画面のクレーム編集） | ✅ 完了（2026-09-06） |
 | M2'' | セキュリティ要件の残り（2026-09-09）: HTTPS 構成（SEC-01）、レート制限（SEC-09）、CORS（SEC-10）と、xUnit + WebApplicationFactory の結合テスト（`Tests/`） | ✅ 完了（2026-09-09） |
-| M3 | 🌐 ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 次 |
+| M3a | 🌐 ブラウザリダイレクト（方式 A）の画面なしで作れる部分: セッション Cookie（`/account/session`）、GET `/connect/authorize` のリダイレクト応答とエラーリダイレクト、`response_mode`（`query` / `form_post`）、`prompt=none`、`max_age`、TestClient `authorize`（ローカル HTTP リスナー） | ✅ 完了（2026-09-09） |
+| M3b | 🌐 画面が要る残り: `/account/login`、同意画面と `consents` の読み書き、`/connect/logout` とログアウト確認画面、`prompt=login` / `consent`、外部 IdP、Front-Channel / Back-Channel Logout | 🔲 次 |
 
 **アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
 失効はリフレッシュトークンに対して確実に効かせ、アクセストークンは短寿命で対処する。
@@ -46,9 +47,9 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 
 ## 仕様と実装の乖離
 
-- [ ] 🌐 `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する ※M3
-      現在は方式 B（API 専用・資格情報直送）のみ。方式 B は信頼モデルが ROPC 相当のため、
-      同意画面・`prompt` パラメーター・外部 IdP 連携が成立しません
+- [x] 🌐 `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する（M3a、2026-09-09）
+      GET はセッション Cookie で利用者を判断してリダイレクトで認可コードを返します。方式 B も従来どおり残しています。
+      ログイン画面が未実装のため、未ログインの要求は `login_required` を返します（残りは M3b）
 - [x] HTTPS 構成（`SPEC.md` SEC-01）。開発環境も dev 証明書で HTTPS のみをリッスン（AuthServer `https://localhost:5080`、ResourceServer `https://localhost:5180`）。
       本番相当では HTTP → HTTPS リダイレクトと HSTS。ResourceServer の `RequireHttpsMetadata` は全環境で `true`（2026-09-09）
 - [x] レート制限（`SPEC.md` SEC-09）。クライアント IP ごとの固定ウィンドウ。`/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、
@@ -110,8 +111,12 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] 結合テスト: Authorization Code Flow 全体フロー
 - [x] 結合テスト: PKCE 不一致で拒否確認（`invalid_grant`）
 - [x] 結合テスト: 認可コード再利用で拒否確認（`invalid_grant`）
-- [ ] 🌐 `/connect/authorize` の GET（ブラウザリダイレクト）実装 ※M3
-- [ ] 🌐 `/account/login` Blazor ページ実装 ※M3
+- [x] 🌐 `/connect/authorize` の GET（ブラウザリダイレクト）実装（M3a。`response_mode` は `query` / `form_post`、エラーは RFC 6749 §4.1.2.1 に従って `redirect_uri` へ返す）
+- [ ] 🌐 `/account/login` Blazor ページ実装 ※M3b
+- [ ] 🌐 TestClient: ブラウザを起動して実際のログインを挟む ※M3b（`cmd /c start <認可 URL>` で開く。`&` を `^&` にエスケープする必要がある。
+      認可コードの受信は `authorize` コマンドのローカル HTTP リスナーをそのまま使える）
+- [x] エンドユーザーのセッション（`/account/session` で Cookie を発行 / 確認 / 破棄。`SessionLifetimeSeconds`、HttpOnly / Secure / SameSite=Lax）。ログイン画面もこのエンドポイントを使う（M3a）
+- [x] TestClient: 方式 A の実行（`authorize` コマンド。セッション確立 → GET 認可 → ローカル HTTP リスナーで `redirect_uri` を受信 → トークン交換 → `state` / `nonce` 検証）
 - [x] `state` の検証（サーバーは保存・返却、TestClient が送信値との一致を検証。方式 A では redirect 先で同様に検証する）
 
 ## Phase 3: OIDC 準拠
@@ -128,7 +133,7 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] ID Token に `at_hash`, `auth_time`, `amr` を追加（`email_verified` も boolean 化、有効期限は `IdTokenLifetimeSeconds` に分離）
 - [x] Discovery メタデータ拡張（`claims_supported`, `subject_types_supported`, `request_uri_parameter_supported`）
 - [x] 🖥️ カスタムクレーム（`claim_definitions` / `user_claims`。`/claims` で定義し、Users 画面でユーザーごとの値を設定。型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先を指定。`claims_supported` / `scopes_supported` に動的反映。M2'）
-- [ ] 🌐 Discovery に `response_modes_supported` を追加 ※M3（方式 B に該当する標準値がない）
+- [x] 🌐 Discovery に `response_modes_supported` を追加（`query` / `form_post`）
 - [ ] 🌐 Dapper による同意情報データアクセス実装 ※M3
 - [ ] 🌐 `/account/consent` Blazor ページ実装 ※M3
 - [ ] 🌐 同意済みスコープの DB 保存・参照 ※M3
@@ -203,7 +208,8 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 ### B-1. 最優先（学習価値・需要ともに高い）
 
 - [x] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`replay_guard` に一回限りの値（kind + value）を期限つきで記録。`private_key_jwt` の `jti`（RFC 7523 §3）と認可要求の `nonce` に適用し、再提示は `invalid_client` / `invalid_request` で拒否して監査ログ `replay_detected` に記録。AT の `jti` は失効リスト、認可コード / RT の再提示はファミリー失効（SEC-04）で扱う（M2'）
-- [ ] 🌐 ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※M3
+- [x] 🌐 ★★★ **`prompt` パラメーター対応**（`none`）と `max_age` — OIDC Core §3.1.2.1。`prompt=none` は既存セッションを検出し、なければ `login_required`（M3a）
+- [ ] 🌐 `prompt=login` / `consent` / `select_account` の本来の挙動 ※M3b。現在はそれぞれ `login_required` / `consent_required` / `account_selection_required` を返すだけで、再認証・同意・アカウント選択の画面がない
 - [ ] 🌐 ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。リダイレクト型の認可要求を保護する仕様のため方式 A が前提。コスト: 中 ※M3
 - [x] ★★☆ **複数署名アルゴリズム対応（ES256）** — RFC 7518。管理画面でローテーション時に RS256 / ES256 を選択。JWKS・検証・Discovery を対応（M2）
 

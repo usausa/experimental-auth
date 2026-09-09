@@ -33,6 +33,9 @@ builder.Services.Configure<AuthServerOptions>(builder.Configuration.GetSection("
 builder.Services.AddAuthServerRateLimiting(builder.Configuration);
 builder.Services.AddAuthServerCors(builder.Configuration);
 
+// エンドユーザーのログインセッション (方式 A の GET /connect/authorize が参照する Cookie)
+builder.Services.AddAuthServerSession(builder.Configuration);
+
 // SQLite の配置先。Data:Directory で上書きできる (結合テストは一時ディレクトリを使う)。相対パスはコンテンツルート基準
 var dataDirectory = Path.GetFullPath(builder.Configuration["Data:Directory"] ?? "Data", builder.Environment.ContentRootPath);
 
@@ -102,6 +105,8 @@ else
 app.UseHttpsRedirection();
 app.UseCors();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseAntiforgery();
 
@@ -117,6 +122,7 @@ app.MapUserInfoEndpoint();
 app.MapRevocationEndpoint();
 app.MapIntrospectionEndpoint();
 app.MapDeviceAuthorizationEndpoint();
+app.MapSessionEndpoint();
 
 app.MapDefaultEndpoints();
 

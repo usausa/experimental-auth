@@ -35,6 +35,15 @@ public class AuthServerFactory : WebApplicationFactory<Program>
         }
     }
 
+    // ブラウザを模したクライアント。リダイレクトは自動で追わず、セッション Cookie は保持する
+    public HttpClient CreateBrowserClient() =>
+        CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            BaseAddress = ClientOptions.BaseAddress,
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync().ConfigureAwait(false);

@@ -17,6 +17,7 @@ builder.ConfigureCommands(commands =>
 
     commands.AddCommand<DiscoveryCommand>();
     commands.AddCommand<TokenCommand>();
+    commands.AddCommand<AuthorizeCommand>();
     commands.AddCommand<RefreshCommand>();
     commands.AddCommand<ApiCommand>();
     commands.AddCommand<UserInfoCommand>();
