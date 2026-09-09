@@ -167,8 +167,9 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-01 | メタデータ | OpenID Provider Configuration | `/.well-known/openid-configuration` | GET | **必須** | OIDC Discovery §4 | 1 | ✅ | サーバーメタデータ公開 |
 | E-02 | メタデータ | JWK Set | `/.well-known/jwks.json` | GET | **必須** | RFC 7517 | 1 | ✅ | 署名検証用公開鍵 |
 | E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行。クライアント認証は `client_secret_basic` / `client_secret_post` / `private_key_jwt`（RFC 7523）/ `none` で、登録済みの方式を強制（§6.3） |
-| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | ✅ | 認可コード発行。GET は方式 A（セッション Cookie + リダイレクト、`response_mode` は `query` / `form_post`）、POST は方式 B（資格情報を直送し JSON で返す）。§6.3 参照 |
-| E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。POST 版は未実装 |
+| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。GET は方式 A（セッション Cookie + リダイレクト、`response_mode` は `query` / `form_post`）。POST は現在 方式 B が占有しており、OIDC Core §3.1.2.1 が MUST とする「GET と同じ認可パラメーターを form-urlencoded で受けてリダイレクトする POST」に非対応（§6.3 / `TODO.md`） |
+| E-20 | 認可 | Direct Authorization (方式 B) | `/connect/authorize/direct` | POST | 任意（独自） | — | 2 | 🔲 | 方式 B の移設先。資格情報を直送し認可コードを JSON で返す。標準の POST 認可要求と衝突しないよう分離する（`TODO.md`） |
+| E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | 🟡 | ユーザークレーム返却。OIDC Core §5.3.1 は GET と POST の両対応を MUST としているが、POST とフォームボディの `access_token` は未実装（`TODO.md`） |
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
 | E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
 | E-08 | セッション | End Session (Logout) | `/connect/logout` | GET | 任意 | OIDC RP-Logout §2 | 4 | 🔲 | ログアウト |
@@ -389,6 +390,12 @@ SameSite=Lax（クライアントのサイトからのトップレベル遷移�
 AuthServer を純粋な API サーバーとして扱うため、ブラウザリダイレクトを行わず
 `POST /connect/authorize` でクライアントが `username` / `password` を直接送信し、
 認可コードを JSON レスポンスで受け取ります。
+
+> **パスの移設予定**: OIDC Core §3.1.2.1 は認可エンドポイントの POST を MUST としており、それは
+> 「GET と同じ認可パラメーターを form-urlencoded で受け、リダイレクトで応答する」ものです。現在は方式 B が
+> `POST /connect/authorize` を占有しているため、標準クライアントの POST 認可要求は `username` / `password` の
+> 欠落で弾かれます。方式 B は `/connect/authorize/direct`（E-20）へ移し、`POST /connect/authorize` は
+> 標準どおりの動作にする方針です（`TODO.md`）。
 
 ```
 POST /connect/authorize
@@ -916,7 +923,9 @@ https://client.example.com/callback
 | SEC-10 | CORS 制限 | プロトコルエンドポイント | ✅ | `Cors:AllowedOrigins` に列挙したオリジンだけに GET / POST（`Authorization` / `Content-Type` ヘッダー）を許可（`Security/CorsExtensions.cs`）。未設定なら CORS 応答ヘッダーを返さない。Discovery / JWKS は公開メタデータとして任意オリジンの GET を許可 |
 | SEC-11 | クライアント認証方式の強制 | Token / Revocation / Introspection / Device | ✅ | 登録済み `token_endpoint_auth_method` 以外での認証を拒否。`private_key_jwt` は署名・`iss` / `sub` / `aud` / `exp`・寿命上限・`jti` の一回性を検証（§6.3） |
 | SEC-12 | リプレイ検出 | client_assertion / nonce / 認可コード / RT | ✅ | `replay_guard`（`jti`、`nonce`）とファミリー失効（認可コード・RT）。検出時は監査ログ `replay_detected` に記録 |
-| SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5） |
+| SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5）。どのクライアント認証方式が使われたかは未記録（`TODO.md`） |
+| SEC-14 | トークン応答のキャッシュ禁止 | Token / Introspection / UserInfo / Authorize / Session | 🔲 | RFC 6749 §5.1 の MUST。トークン・資格情報を含む応答に `Cache-Control: no-store` と `Pragma: no-cache` を付ける。現在は JWKS の `max-age` のみで未実装（`TODO.md`） |
+| SEC-15 | セキュリティヘッダー | Blazor 画面 / 全エンドポイント | 🔲 | CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy`・`Permissions-Policy`。現在は `UseHsts` のみ。同意画面は上被せクリックジャッキングの標的になるため `X-Frame-Options: DENY` と no-store が要る。`form_post` でクライアントへ POST する構成では CSP の `form-action` に IdP ホストの許可が必要（`TODO.md`） |
 
 認可コード・リフレッシュトークンはいずれも SHA-256 ハッシュ（小文字 16 進）で保存し、
 平文は DB に残しません。リフレッシュトークンはローテーション時に旧トークンを失効させ、
@@ -1025,12 +1034,12 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 
 `scopes_supported` / `claims_supported` はカスタムクレームの定義（§6.4）を動的に反映します（上記の `department` は seed の定義）。
 
-未反映の項目: `end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ。
-いずれも対応エンドポイントが未実装のためです。
+未反映の項目: `end_session_endpoint`, `registration_endpoint`, `offline_access` スコープ。いずれも対応する機能が未実装のためです。
+`end_session_endpoint` が無いと、ASP.NET Core の標準 OpenID Connect ハンドラーは OIDC スキームでの `SignOut` に失敗します。
 `request_uri_parameter_supported` は省略時の既定値が `true` のため、未対応を明示するために `false` を出力しています。
 
-なお `authorization_endpoint` は POST 専用（§6.3 方式 B）であり、
-標準の Authorization Code Flow を期待するクライアントとは互換性がありません。
+今後の実装に伴って追加する項目: `authorization_response_iss_parameter_supported`（RFC 9207）、`acr_values_supported`（ACR の導入時）。
+Discovery の一覧は現在ハードコードのため、実装とずれる余地があります（`TODO.md`）。
 
 ### 9.2 全 Phase 完了時の目標
 

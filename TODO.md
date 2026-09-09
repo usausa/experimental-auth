@@ -55,6 +55,14 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 - [x] レート制限（`SPEC.md` SEC-09）。クライアント IP ごとの固定ウィンドウ。`/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、
       トークン系は `TokenPermitLimit`（既定 60/分）。超過は 429 + `Retry-After`。Blazor の承認画面（SignalR）は対象外（2026-09-09）
 - [x] CORS（`SPEC.md` SEC-10）。`Cors:AllowedOrigins` のオリジンだけにプロトコルエンドポイントを許可し、Discovery / JWKS は任意オリジンの GET を許可（2026-09-09）
+- [ ] RFC 6749 §5.1 のキャッシュ制御（`SPEC.md` SEC-14）。トークン・資格情報を含む応答に `Cache-Control: no-store` と `Pragma: no-cache` を付ける（MUST）。
+      対象は `/connect/token`・`/connect/introspect`・`/connect/userinfo`・方式 B の認可応答・`/account/session`。現在は JWKS の `max-age` のみ
+- [ ] OIDC Core §5.3.1 の UserInfo POST（MUST）。現在 GET のみで、POST とフォームボディの `access_token` に非対応
+- [ ] 🌐 OIDC Core §3.1.2.1 の POST 認可要求（MUST）。`POST /connect/authorize` を GET と同じセマンティクス（form-urlencoded の
+      認可パラメーターを受けてリダイレクト）にし、方式 B は `/connect/authorize/direct`（`SPEC.md` E-20）へ移す。
+      TestClient・結合テスト・SPEC / README の追随が必要
+- [ ] RFC 6749 §6 のリフレッシュ時スコープ縮小。現在 `scope` パラメーターを読んでおらず、狭いスコープを要求しても元の全スコープが返る。
+      元の付与範囲のサブセットであることの検証も無い
 - [x] `redirect_uri` のスキーム検証（`javascript:` / `data:` を弾き、`http` / `https` の絶対 URI でフラグメントなしを要求）。
       認可エンドポイントの脆弱実装対策として追加（`SPEC.md` SEC-05、2026-09-09）
 - [x] 自動テスト。`Tests/AuthServer.Tests`（xUnit + WebApplicationFactory、一時 SQLite、seed 有効）と `Tests/ResourceServer.Tests`（AuthServer の TestServer を JWKS の取得先に差し替えた結合テスト）。`dotnet test AuthServer.slnx` で実行（2026-09-09）
@@ -118,8 +126,12 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [ ] 🌐 サーバー側セッションストア（`ITicketStore`）※M3b の前提。現在はクレームをセッション Cookie に直接入れており、
       サーバー側にセッションの記録がない。管理画面からの強制ログアウト、Back-Channel Logout の `sid`、
       ログイン中セッションの一覧はいずれもこれがないと作れない
-- [ ] 🌐 サンプルクライアント（Blazor BFF か SPA）※M3b。現状 CORS 設定と `form_post` に実際の利用者がいない。
-      ブラウザで方式 A を通しで流せるようになる。Blazor 側のトークン保管（`IJwtAccessor` 相当）もここで検討する
+- [ ] 🌐 サンプルクライアントは 2 種類必要 ※M3b。BFF はホストと同一オリジンで動き、認可サーバーへの通信がすべてサーバー側の
+      バックチャネルになるため、**CORS の利用者にはならない**（2026-09-09 の調査で判明）。
+      (1) 標準 OpenID Connect ハンドラーのクライアント … 方式 A の検証。ハンドラーの `ResponseMode` 既定値が `form_post` なので、
+          繋いだ時点で `form_post` 経路も実利用される。`end_session_endpoint` が無いと `SignOut` が失敗する点に注意
+      (2) 素の SPA（public client + PKCE）… CORS の利用者を作る
+      Blazor 側のトークン保管（`IJwtAccessor` 相当）は (1) で検討する
 - [ ] 🌐 TestClient: ブラウザを起動して実際のログインを挟む ※M3b（`cmd /c start <認可 URL>` で開く。`&` を `^&` にエスケープする必要がある。
       認可コードの受信は `authorize` コマンドのローカル HTTP リスナーをそのまま使える）
 - [x] エンドユーザーのセッション（`/account/session` で Cookie を発行 / 確認 / 破棄。`SessionLifetimeSeconds`、HttpOnly / Secure / SameSite=Lax）。ログイン画面もこのエンドポイントを使う（M3a）
@@ -144,8 +156,18 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] Discovery メタデータ拡張（`claims_supported`, `subject_types_supported`, `request_uri_parameter_supported`）
 - [x] 🖥️ カスタムクレーム（`claim_definitions` / `user_claims`。`/claims` で定義し、Users 画面でユーザーごとの値を設定。型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先を指定。`claims_supported` / `scopes_supported` に動的反映。M2'）
 - [x] 🌐 Discovery に `response_modes_supported` を追加（`query` / `form_post`）
+- [ ] 🌐 RFC 9207 認可応答の `iss`。複数の認可サーバーを使うクライアントに対する mixup 攻撃対策で、方式 A を実装したことで関係するようになった。
+      Discovery に `authorization_response_iss_parameter_supported` を追加する。実装量は小さい
+- [ ] ID Token の `sid`。セッションを実装したので意味を持ち、Back-Channel Logout の前提にもなる
+- [ ] RFC 7662 §2.1 の `WWW-Authenticate`。イントロスペクションの 401 に `WWW-Authenticate: Basic realm="..."` を添える
+- [ ] Discovery を実装から動的に生成する。グラント・応答タイプ・クライアント認証方式をハードコードしているため、実装とずれる余地がある
+      （`claims_supported` と `scopes_supported` はカスタムクレーム定義から動的生成済み）
+- [ ] 🖥️ カスタムクレームのドット記法（`address.street` のような入れ子パス）。OIDC 標準の `address` クレームをハードコードなしに表現できる
 - [ ] 🌐 Dapper による同意情報データアクセス実装 ※M3
-- [ ] 🌐 `/account/consent` Blazor ページ実装 ※M3
+- [ ] 🌐 `/account/consent` Blazor ページ実装 ※M3。設計は次の 4 点をセットにする（2026-09-09 の調査より）。
+      (1) ticket 方式 … 認可要求はサーバー側に保持し、フォームには決定内容だけを置く。ブラウザーを往復させると検証が 2 経路に増える
+      (2) CSRF トークン (3) `X-Frame-Options: DENY`（同意ボタンへの上被せ対策） (4) `Cache-Control: no-store`
+      あわせて、保存済み同意の再利用条件（スコープ集合の完全一致を要求するか、部分集合を許すか）を決める
 - [ ] 🌐 同意済みスコープの DB 保存・参照 ※M3
 - [ ] 🌐 同意済みの場合は同意画面スキップ ※M3
 - [x] TestClient: ID Token のデコード・表示（`token` コマンドがペイロードのクレームを一覧表示）
@@ -169,6 +191,10 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 期限切れ認可コード・リフレッシュトークンのクリーンアップジョブ (`Services/MaintenanceService.cs`)
 - [x] 期限切れ失効トークンのクリーンアップジョブ（猶予期間切れの鍵の退役も同じジョブ）
 - [x] リプレイ検出の共通基盤（`replay_guard`。一回限りの値を期限つきで記録し、期限切れは保守ジョブが削除。M2'）
+- [ ] セキュリティヘッダー（`SPEC.md` SEC-15）。CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy`・`Permissions-Policy`。
+      現在は `UseHsts` のみ。ログイン画面と同意画面（M3b）を作る前に入れる。`form_post` でクライアントへ POST する構成では
+      CSP の `form-action` に相手ホストの許可が要る点に注意
+- [ ] 監査ログにクライアント認証方式を記録する。要求内容の JSON も残すと追跡しやすい
 - [x] 🖥️ 監査ログ（`audit_logs`。クライアント認証失敗・トークン発行 / 拒否・認可・デバイス承認 / 拒否・失効・リプレイ検出・鍵操作・管理画面の変更を記録。`/audit-logs` で絞り込み表示。`AuditLogRetentionDays` 経過分は保守ジョブが削除。M2'）
 - [x] TestClient: トークン失効実装（`revoke --token-type all|access|refresh`）
 - [x] TestClient: イントロスペクション実装（`introspect --token-type access|refresh`）
@@ -235,6 +261,9 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 - [ ] 🖥️ ★★☆ **パスキー / WebAuthn（FIDO2）** — ユーザーごとに公開鍵を登録し、認証時に署名を検証する。ログイン画面が前提で、
       検証は外部ライブラリに依存する。`amr` を `["pwd"]` 固定から実際の認証方式に変える必要がある。コスト: 高
 - [ ] 🖥️ ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。検証は方式 B の `POST /connect/authorize` に `totp` を足せば API で完結し、登録（QR 表示）だけ画面が必要。コスト: 中
+- [ ] ★★☆ **ACR / AMR のモデル化** — ACR を「名前 + 順序付き AMR リスト」としてテーブルに持ち、`acr_values` → クライアント既定値 →
+      サーバー既定値の順で解決する。現在 `amr` は `["pwd"]` 固定。パスキー・TOTP・外部 IdP はいずれもこの受け皿がないと後から差し込めないため、
+      それらに着手する前に入れると効く。Discovery の `acr_values_supported` と対。コスト: 中
 - [ ] 🖥️ ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。確認リンクの着地画面とメール送信基盤が必要。コスト: 中
 
 ### B-3. 中優先（学習価値は高いが実装コストが大きい）
@@ -262,11 +291,16 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 | DPoP（RFC 9449） | 2026-09-09 に不要と判断。Bearer トークンの盗難対策は短寿命 AT + RT ローテーション + `private_key_jwt` で足りるとする |
 | ユーザーグループ / ロール管理 | 2026-09-09 に不要と判断。必要ならカスタムクレーム（`roles` などを json 型で定義）で代替する |
 | SCIM 2.0（RFC 7643 / 7644） | 2026-09-09 に不要と判断。ユーザー管理は管理画面で行う |
+| UMA 2.0 | 2026-09-09 に不要と判断。リソース所有者が第三者への認可を管理する仕組みで、OAuth / OIDC の中核から外れるうえ規模も大きい |
+| FAPI の Grant Management | 2026-09-09 に不要と判断。同意を grant として識別・再利用・失効する仕組みで、本サンプルの同意画面（M3b）の範囲を超える |
+| JARM（`response_mode=jwt`） | 2026-09-09 に不要と判断。認可応答自体を JWT 化して署名する仕様。`query` / `form_post` で足りるとする |
 
 ### 着手順
 
 冒頭の「マイルストーン計画」を参照してください。M2 / M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）/ M2''（HTTPS / レート制限 / CORS / 自動テスト）は完了し、次は M3（🌐 方式 A）です。
-🌐 なしで残る候補は 🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛だけで、いずれも M3 の後に必要なら着手します。
+🌐 なしで残る候補は ACR / AMR のモデル化、🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛です。
+ただし「仕様と実装の乖離」に挙げた RFC 6749 §5.1 のキャッシュ制御、UserInfo の POST、POST 認可要求、リフレッシュ時のスコープ縮小は
+いずれも仕様上の MUST なので、M3b より先に片付けます。
 
 ---
 
@@ -274,3 +308,6 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 - `SPEC.md` — 実装仕様書。Phase ごとの設計と実装状況の概要
 - `__Other/FEATURE_ANALYSIS.md` — Phase B の元になった機能調査
+- `C:\Users\machi\Desktop\IdServer` — 2026-09-09 に調査した他実装。SimpleIdServer（Apache 2.0）、Authlete の C# リファレンス実装（Apache 2.0）、
+  Thinktecture AuthorizationServer（BSD 系、2016 年で開発終了）、damienbod の Blazor BFF テンプレート（MIT）。
+  上記の MUST 違反・小項目・設計の受け皿はここから抽出した。コードを流用する場合は帰属表示が必要
