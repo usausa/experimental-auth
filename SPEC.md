@@ -165,7 +165,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 |---|---------|--------------|------|---------|----------|---------|-------|------|------|
 | E-01 | メタデータ | OpenID Provider Configuration | `/.well-known/openid-configuration` | GET | **必須** | OIDC Discovery §4 | 1 | ✅ | サーバーメタデータ公開 |
 | E-02 | メタデータ | JWK Set | `/.well-known/jwks.json` | GET | **必須** | RFC 7517 | 1 | ✅ | 署名検証用公開鍵 |
-| E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行 |
+| E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行。クライアント認証は `client_secret_basic` / `client_secret_post` / `private_key_jwt`（RFC 7523）/ `none` で、登録済みの方式を強制（§6.3） |
 | E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。**API 専用方式のみ実装**（§6.3 参照）。標準のブラウザリダイレクト方式 (GET) は未実装 |
 | E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。POST 版は未実装 |
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
@@ -182,7 +182,7 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 | E-17 | UI (Blazor) | Password Reset | `/account/password-reset` | — (Blazor) | 任意 | — | 5 | 🔲 | パスワードリセット画面 |
 | E-18 | UI (Blazor) | Consent Management | `/account/consents` | — (Blazor) | 任意 | — | 5 | 🔲 | 同意管理画面 |
 
-管理 UI として `/users`（ユーザー管理）と `/resource-servers`（リソースサーバー管理）を MudBlazor で実装済みです。これらは OAuth/OIDC のプロトコル面ではなく運用管理用のため、上表には含めていません。
+管理 UI として `/`（リソースサーバー管理）、`/users`（ユーザー管理・ユーザーごとのカスタムクレーム値）、`/signing-keys`（署名鍵）、`/claims`（カスタムクレーム定義）、`/audit-logs`（監査ログ）を MudBlazor で実装済みです。これらは OAuth/OIDC のプロトコル面ではなく運用管理用のため、上表には含めていません。
 
 ### 4.2 Token Endpoint 対応 Grant Type
 
@@ -453,6 +453,25 @@ TestClient                     AuthServer                 ResourceServer
 
 ブラウザおよび User の関与がなく、資格情報が TestClient を経由する点が方式 A との差です。
 
+#### クライアント認証と nonce（M2'）
+
+Token / Revocation / Introspection / Device Authorization の各エンドポイントは `Services/ClientAuthenticator.cs` でクライアントを認証します。
+登録済みの `token_endpoint_auth_method` を強制し、別の方式で認証しようとした要求は `invalid_client` になります。
+
+| 方式 | 検証内容 |
+|------|---------|
+| `client_secret_basic` / `client_secret_post` | シークレットを PBKDF2 ハッシュと照合。送り方（Basic ヘッダー / フォーム）の違いは相互に受理 |
+| `none` | 公開クライアント。`client_id` のみ。シークレットを送ってきた要求は拒否 |
+| `private_key_jwt` | RFC 7523 §2.2 / OIDC Core §9。`client_assertion`（RS256 / ES256）を `clients.jwks` の公開鍵で検証。`iss` = `sub` = `client_id`、`aud` は発行者識別子または呼び出したエンドポイント URL、`exp` 必須で寿命は `ClientAssertionMaxLifetimeSeconds` 以下、`jti` 必須かつ一回限り（`replay_guard` に `exp` まで記録。再提示は `invalid_client` + 監査ログ `replay_detected`） |
+
+方式 B の `/connect/authorize` では `nonce` を次のように扱います（OIDC Core §3.1.2.1 / §3.1.3.7）。
+
+- `openid` スコープを含む要求では必須（`RequireNonce`、既定 true）。省略時は `invalid_request`
+- 空白を含まない印字可能 ASCII で 512 文字以内
+- ユーザー認証に成功した後、`client_id` + `nonce` を `replay_guard` に記録（期限 = 認可コード寿命 + ID Token 寿命）。同じ値の再提示は `invalid_request` で拒否し、監査ログに記録する
+- 発行した ID Token に `nonce` をそのまま含める。TestClient は送信した値との一致を検証し、不一致ならトークンを破棄する
+- デバイスフローの ID Token には `nonce` がない（RFC 8628 の要求に `nonce` がないため）
+
 ### 6.4 Phase 3: OIDC 準拠
 
 **目標**: OpenID Connect Core 1.0 の最低要件を満たす。
@@ -562,6 +581,20 @@ User/Browser                          AuthServer
      │  ◄─────────────────────────────────│
 ```
 
+#### カスタムクレーム（M2'）
+
+管理者が `/claims` で任意のクレームを定義し、Users 画面でユーザーごとの値を設定します（`claim_definitions` / `user_claims`、`Services/CustomClaimService.cs`）。
+
+| 項目 | 内容 |
+|------|------|
+| クレーム名 | 英字で始まる 128 文字以内（`_` `.` `:` `/` `-` 可）。`sub` / `email` など OIDC / JWT の予約名は定義不可 |
+| 値の型 | `string` / `number` / `boolean` / `json`。保存は文字列で、発行時に型付きの JSON 値へ変換する |
+| 必要スコープ | 指定したスコープが付与されたときだけ出力（未指定なら常に出力） |
+| 出力先 | アクセストークン / ID Token / UserInfo をそれぞれ選択 |
+
+Discovery の `claims_supported` に定義済みのクレーム名を、`scopes_supported` に必要スコープを動的に反映します。
+seed は `department`（`profile` スコープ、ID Token + UserInfo）と alice の値 `Engineering` を投入します。
+
 ### 6.5 Phase 4: 運用機能
 
 **目標**: トークンの失効・検査・ログアウト・鍵ローテーションなど、本番運用に必要な機能を実装する。
@@ -572,7 +605,7 @@ User/Browser                          AuthServer
 |---------|------|------|------|
 | revoked_tokens テーブル・データアクセス | インフラ | ✅ | `RevokedTokenService`。失効したアクセストークンの JTI を保存・照合 |
 | signing_keys テーブル拡張 | インフラ | ✅ | 予約 / 現用 / 猶予期間 / 退役の 4 状態を `is_active`・`expires_at`・`activates_at` で表現。`algorithm` は RS256 / ES256 |
-| スキーママイグレーション機構 | インフラ | ✅ | `schema_migrations` で適用済みバージョンを管理。v1: `authorization_codes.consumed_at`、v2: `refresh_tokens.source_code_hash` |
+| スキーママイグレーション機構 | インフラ | ✅ | `schema_migrations` で適用済みバージョンを管理。v1〜v11（§10.1 のマイグレーション一覧） |
 | E-06 `/connect/revoke` | エンドポイント | ✅ | `token` + `token_type_hint`。無効・未知・他クライアントのトークンでも 200（存在を漏らさない） |
 | E-07 `/connect/introspect` | エンドポイント | ✅ | `active`, `token_type`, `client_id`, `sub`, `scope`, `aud`, `iss`, `jti`, `iat`, `nbf`, `exp`（+ `username`） |
 | E-08 `/connect/logout` | エンドポイント | 🔲 | 方式 A 前提（M3） |
@@ -581,7 +614,10 @@ User/Browser                          AuthServer
 | UC-S17 イントロスペクション | 内部処理 | ✅ | JWT（アクセストークン）と参照型（リフレッシュトークン）の両対応 |
 | UC-S18 鍵ローテーション | 内部処理 | ✅ | 管理画面 `/signing-keys` から予約（事前公開）または即時、`SigningKeyRotationDays` で自動予約。アルゴリズムは RS256 / ES256 を選択可。旧鍵は猶予期間中 JWKS に公開 |
 | UC-S19 セッション管理 | 内部処理 | 🔲 | 方式 A 前提（M3） |
-| 期限切れデータのクリーンアップ | 内部処理 | ✅ | `MaintenanceService` が `MaintenanceIntervalMinutes` ごとに認可コード・RT・失効リストを削除し、猶予期間切れの鍵を退役 |
+| 期限切れデータのクリーンアップ | 内部処理 | ✅ | `MaintenanceService` が `MaintenanceIntervalMinutes` ごとに認可コード・デバイスコード・RT・失効リスト・リプレイ記録・保持期間を過ぎた監査ログを削除し、猶予期間切れの鍵を退役 |
+| クライアント認証の強制と `private_key_jwt` | 内部処理 | ✅ | `ClientAuthenticator`（§6.3「クライアント認証と nonce」）。M2' |
+| リプレイ検出 | 内部処理 | ✅ | `replay_guard` に一回限りの値を期限つきで記録（`private_key_jwt` の `jti`、認可要求の `nonce`）。認可コード / RT の再提示はファミリー失効（SEC-04）。いずれも監査ログ `replay_detected` に記録。M2' |
+| 監査ログ | インフラ / UI | ✅ | `audit_logs` + `AuditLogService`。クライアント認証失敗・トークン発行 / 拒否・認可・デバイス承認 / 拒否・失効・リプレイ検出・鍵操作・管理画面の変更を記録し、`/audit-logs` で参照。`AuditLogRetentionDays` 経過分は保守ジョブが削除。M2' |
 
 #### アクセストークン失効の反映範囲（方式 3）
 
@@ -841,6 +877,9 @@ https://client.example.com/callback
 | SEC-08 | 暗号学的乱数使用 | コード・トークン生成 | ✅ | `RandomNumberGenerator.GetBytes(32)` を使用 |
 | SEC-09 | レート制限 | Token Endpoint, Login | 🔲 | ブルートフォース防止。未実装 |
 | SEC-10 | CORS 制限 | 全エンドポイント | 🔲 | 許可オリジンを明示的に設定。未実装 |
+| SEC-11 | クライアント認証方式の強制 | Token / Revocation / Introspection / Device | ✅ | 登録済み `token_endpoint_auth_method` 以外での認証を拒否。`private_key_jwt` は署名・`iss` / `sub` / `aud` / `exp`・寿命上限・`jti` の一回性を検証（§6.3） |
+| SEC-12 | リプレイ検出 | client_assertion / nonce / 認可コード / RT | ✅ | `replay_guard`（`jti`、`nonce`）とファミリー失効（認可コード・RT）。検出時は監査ログ `replay_detected` に記録 |
+| SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5） |
 
 認可コード・リフレッシュトークンはいずれも SHA-256 ハッシュ（小文字 16 進）で保存し、
 平文は DB に残しません。リフレッシュトークンはローテーション時に旧トークンを失効させ、
@@ -921,13 +960,14 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
   ],
   "response_types_supported": ["code"],
   "token_endpoint_auth_methods_supported": [
-    "client_secret_post", "client_secret_basic"
+    "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
   ],
+  "token_endpoint_auth_signing_alg_values_supported": ["RS256", "ES256"],
   "revocation_endpoint_auth_methods_supported": [
-    "client_secret_post", "client_secret_basic"
+    "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
   ],
   "introspection_endpoint_auth_methods_supported": [
-    "client_secret_post", "client_secret_basic"
+    "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
   ],
   "id_token_signing_alg_values_supported": ["RS256", "ES256"],
   "scopes_supported": [
@@ -937,11 +977,14 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
   "subject_types_supported": ["public"],
   "claims_supported": [
     "sub", "iss", "aud", "exp", "iat", "nbf", "jti", "azp", "nonce", "auth_time", "amr", "at_hash",
-    "name", "given_name", "family_name", "preferred_username", "email", "email_verified"
+    "name", "given_name", "family_name", "preferred_username", "email", "email_verified",
+    "department"
   ],
   "request_uri_parameter_supported": false
 }
 ```
+
+`scopes_supported` / `claims_supported` はカスタムクレームの定義（§6.4）を動的に反映します（上記の `department` は seed の定義）。
 
 未反映の項目: `end_session_endpoint`, `registration_endpoint`, `response_modes_supported`, `offline_access` スコープ。
 いずれも対応エンドポイントが未実装のためです。
@@ -1144,6 +1187,49 @@ ALTER TABLE refresh_tokens ADD COLUMN family_expires_at TEXT;
 ALTER TABLE refresh_tokens ADD COLUMN audiences TEXT;
 -- v6: デバイスコードの承認時刻 (ID Token の auth_time)
 ALTER TABLE device_codes ADD COLUMN authorized_at TEXT;
+-- v7: クライアントの公開鍵集合 (JWKS JSON)。private_key_jwt の署名検証に使う
+ALTER TABLE clients ADD COLUMN jwks TEXT;
+-- v8: リプレイ検知。一回限りの値 (client_assertion の jti、認可要求の nonce) を期限つきで記録する
+CREATE TABLE replay_guard (
+    kind TEXT NOT NULL,                 -- client_assertion_jti | nonce
+    value TEXT NOT NULL,                -- "<client_id>:<jti|nonce>"
+    client_id TEXT,
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY (kind, value)
+);
+-- v9: 監査ログ
+CREATE TABLE audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    occurred_at TEXT NOT NULL,
+    event TEXT NOT NULL,                -- client_auth, token_issued, token_denied, authorize, replay_detected, ...
+    outcome TEXT NOT NULL,              -- success | failure | info
+    client_id TEXT,
+    user_id TEXT,
+    subject TEXT,                       -- ユーザー名・リソース名など、対象の表示名
+    ip_address TEXT,
+    detail TEXT
+);
+CREATE INDEX idx_audit_logs_occurred_at ON audit_logs (occurred_at);
+-- v10: カスタムクレームの定義
+CREATE TABLE claim_definitions (
+    claim_type TEXT PRIMARY KEY,
+    description TEXT,
+    value_type TEXT NOT NULL DEFAULT 'string',   -- string | number | boolean | json
+    required_scope TEXT,                -- このスコープ付与時のみ出力 (NULL なら常に)
+    in_access_token INTEGER NOT NULL DEFAULT 0,
+    in_id_token INTEGER NOT NULL DEFAULT 1,
+    in_userinfo INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+-- v11: ユーザーごとのカスタムクレーム値
+CREATE TABLE user_claims (
+    user_id TEXT NOT NULL,
+    claim_type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, claim_type)
+);
 ```
 
 **実装との差異** (`AuthServer/Database/DatabaseInitializer.cs`):
@@ -1164,8 +1250,10 @@ ALTER TABLE device_codes ADD COLUMN authorized_at TEXT;
 | クライアント | `test-client` | `test-secret` | `client_credentials` 用 |
 | クライアント | `test-webapp` | `webapp-secret` | `authorization_code` + `refresh_token` 用 |
 | クライアント | `test-device` | （なし・公開クライアント） | `urn:ietf:params:oauth:grant-type:device_code` + `refresh_token` 用。`token_endpoint_auth_method = none` |
+| クライアント | `test-jwt-client` | （なし・`private_key_jwt`） | `client_credentials` 用。`jwks` に ES256 公開鍵（kid `test-jwt-client-key-1`）を登録。対応する秘密鍵は TestClient に開発用フィクスチャとして同梱 |
 | リソースサーバー | `resource-server-001` | — | audience = `http://localhost:5180` |
 | ユーザー | `alice` (`user-001`) | `password` | Alice Tester / alice@example.com |
+| カスタムクレーム | `department` | — | `profile` スコープで ID Token / UserInfo に出力する定義と、alice の値 `Engineering` |
 
 ```sql
 -- 開発用クライアント（client_credentials 用）
@@ -1266,6 +1354,9 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 | `AuthServer` | `SigningKeyPrePublishSeconds` | 3600 | 予約鍵を JWKS に公開してから署名に使い始めるまでの時間 |
 | `AuthServer` | `SigningKeyGraceDays` | 7 | 旧鍵を JWKS に残す猶予期間 |
 | `AuthServer` | `MaintenanceIntervalMinutes` | 60 | クリーンアップ・鍵の昇格 / 退役 / 自動予約を行う間隔 |
+| `AuthServer` | `ClientAssertionMaxLifetimeSeconds` | 300 | `private_key_jwt` のクライアントアサーションに許容する寿命（`exp` − `iat`） |
+| `AuthServer` | `RequireNonce` | true | `openid` を含む認可要求に `nonce` を必須にする |
+| `AuthServer` | `AuditLogRetentionDays` | 90 | 監査ログの保持期間。保守ジョブがこれより古いエントリを削除 |
 | `Seed` | `Enabled` | Development のみ true | テストデータ投入の可否 |
 | `Jwt`（ResourceServer） | `Authority` / `Audience` | — | 検証する発行者と audience |
 | `Jwt`（ResourceServer） | `RequireHttpsMetadata` | true | Development のみ false |

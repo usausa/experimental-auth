@@ -12,6 +12,8 @@ public sealed class MaintenanceService(
     DeviceCodeService deviceCodeService,
     RefreshTokenService refreshTokenService,
     RevokedTokenService revokedTokenService,
+    ReplayGuardService replayGuardService,
+    AuditLogService auditLogService,
     SigningKeyService signingKeyService,
     IOptions<AuthServerOptions> options,
     ILogger<MaintenanceService> logger) : BackgroundService
@@ -40,15 +42,24 @@ public sealed class MaintenanceService(
             var deviceCodes = await deviceCodeService.DeleteExpiredAsync(now);
             var refreshTokens = await refreshTokenService.DeleteExpiredAsync(now);
             var revokedTokens = await revokedTokenService.DeleteExpiredAsync(now);
+            var replayEntries = await replayGuardService.DeleteExpiredAsync(now);
+            var auditLogs = await auditLogService.DeleteOlderThanAsync(now.AddDays(-Math.Max(1, options.Value.AuditLogRetentionDays)));
             var promoted = signingKeyService.PromoteDueKeys(now);
+            if (promoted)
+            {
+                await auditLogService.RecordAsync(new AuditEntry(
+                    AuditEvents.KeyPromoted, AuditOutcome.Info, null, null, "maintenance", null,
+                    "pending signing key promoted to current; the previous key entered its grace period"));
+            }
+
             var retiredKeys = signingKeyService.RetireExpiredKeys(now);
-            var scheduled = ScheduleRotationIfDue(now);
+            var scheduled = await ScheduleRotationIfDueAsync(now);
 
             if (logger.IsEnabled(LogLevel.Information))
             {
                 logger.LogInformation(
-                    "Maintenance completed: expired codes={Codes}, expired device codes={DeviceCodes}, expired refresh tokens={RefreshTokens}, expired revocations={Revocations}, key promoted={Promoted}, retired keys={RetiredKeys}, rotation scheduled={Scheduled}",
-                    codes, deviceCodes, refreshTokens, revokedTokens, promoted, retiredKeys, scheduled);
+                    "Maintenance completed: expired codes={Codes}, expired device codes={DeviceCodes}, expired refresh tokens={RefreshTokens}, expired revocations={Revocations}, expired replay entries={ReplayEntries}, purged audit logs={AuditLogs}, key promoted={Promoted}, retired keys={RetiredKeys}, rotation scheduled={Scheduled}",
+                    codes, deviceCodes, refreshTokens, revokedTokens, replayEntries, auditLogs, promoted, retiredKeys, scheduled);
             }
         }
         catch (DbException ex)
@@ -62,7 +73,7 @@ public sealed class MaintenanceService(
     }
 
     // 現用鍵が SigningKeyRotationDays より古ければ、次の鍵を予約する (事前公開)。0 以下なら自動ローテーションしない。
-    private bool ScheduleRotationIfDue(DateTime now)
+    private async Task<bool> ScheduleRotationIfDueAsync(DateTime now)
     {
         var rotationDays = options.Value.SigningKeyRotationDays;
         if ((rotationDays <= 0) || signingKeyService.HasPendingKey())
@@ -82,6 +93,9 @@ public sealed class MaintenanceService(
             logger.LogInformation("Signing key rotation scheduled automatically. Pending kid: {Kid}", kid);
         }
 
+        await auditLogService.RecordAsync(new AuditEntry(
+            AuditEvents.KeyScheduled, AuditOutcome.Info, null, null, "maintenance", null,
+            $"automatic rotation: algorithm={options.Value.SigningKeyAlgorithm}; pending kid={kid}"));
         return true;
     }
 }

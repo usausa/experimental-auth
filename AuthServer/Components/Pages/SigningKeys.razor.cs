@@ -22,6 +22,9 @@ public partial class SigningKeys
     public SigningKeyService SigningKeyService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public IOptions<AuthServerOptions> Options { get; set; } = default!;
 
     [Inject]
@@ -61,6 +64,8 @@ public partial class SigningKeys
         if (confirmed is true)
         {
             var kid = SigningKeyService.ScheduleRotation(algorithm);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.KeyScheduled, AuditOutcome.Info, null, null, "admin-ui", null, $"algorithm={algorithm}; pending kid={kid}"));
             Snackbar.Add($"Rotation scheduled. Pending kid: {kid}", Severity.Success);
             Load();
         }
@@ -76,6 +81,8 @@ public partial class SigningKeys
         if (confirmed is true)
         {
             var kid = SigningKeyService.RotateKey(algorithm);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.KeyRotated, AuditOutcome.Info, null, null, "admin-ui", null, $"algorithm={algorithm}; new kid={kid}; grace days={GraceDays}"));
             Snackbar.Add($"Signing key rotated. New kid: {kid}", Severity.Success);
             Load();
         }

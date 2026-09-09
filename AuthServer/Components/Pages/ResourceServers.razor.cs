@@ -13,6 +13,9 @@ public partial class ResourceServers
     public ResourceServerService ResourceServerService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public IDialogService DialogService { get; set; } = default!;
 
     [Inject]
@@ -70,6 +73,8 @@ public partial class ResourceServers
         if (confirmed is true)
         {
             await ResourceServerService.DeleteAsync(server.ResourceServerId);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.ResourceServerChanged, AuditOutcome.Success, null, null, server.Name, null, $"deleted via admin UI; audience={server.Audience}"));
             Snackbar.Add("Resource server deleted.", Severity.Success);
             await LoadAsync();
         }

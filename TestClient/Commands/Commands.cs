@@ -30,6 +30,12 @@ public sealed class TokenCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--auth-method", Description = "Client authentication (client_secret_post | client_secret_basic | private_key_jwt | none)")]
+    public string AuthMethod { get; set; } = ClientAuthHelper.SecretPost;
+
+    [Option<string>("--client-key", Description = "Private JWK file for private_key_jwt (default: built-in dev key of test-jwt-client)")]
+    public string? ClientKeyPath { get; set; }
+
     [Option<string>("--scope", "-s", Description = "Requested scope")]
     public string Scope { get; set; } = "api.read api.write";
 
@@ -50,22 +56,33 @@ public sealed class TokenCommand : ICommandHandler
     {
         var authBase = String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer;
         var grant = String.IsNullOrEmpty(GrantType) ? "client_credentials" : GrantType;
-
-        if (grant == "authorization_code")
+        var authMethod = ClientAuthHelper.Normalize(AuthMethod);
+        if (authMethod is null)
         {
-            await ExecuteAuthorizationCodeAsync(context, authBase);
+            ConsoleHelper.WriteError(ClientAuthHelper.InvalidMethodMessage);
+            context.ExitCode = 1;
             return;
         }
 
-        var form = BuildClientCredentialsForm();
+        if (grant == "authorization_code")
+        {
+            await ExecuteAuthorizationCodeAsync(context, authBase, authMethod);
+            return;
+        }
 
-        Console.WriteLine($"Requesting token from {authBase.TrimEnd('/')}/connect/token ...");
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
+        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
+        var form = BuildClientCredentialsForm();
+        var tokenEndpoint = $"{authBase.TrimEnd('/')}/connect/token";
+
+        Console.WriteLine($"Requesting token from {tokenEndpoint} ...");
         Console.WriteLine($"  grant_type : {form["grant_type"]}");
-        Console.WriteLine($"  client_id  : {form["client_id"]}");
+        Console.WriteLine($"  client_id  : {clientId}");
+        Console.WriteLine($"  auth       : {authMethod}");
         Console.WriteLine($"  scope      : {form["scope"]}");
 
-        using var content = new FormUrlEncodedContent(form);
-        var response = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", content);
+        using var request = ClientAuthHelper.CreateRequest(tokenEndpoint, form, clientId, clientSecret, authMethod, ClientKeyPath);
+        var response = await http.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
@@ -102,7 +119,7 @@ public sealed class TokenCommand : ICommandHandler
         }
     }
 
-    private async Task ExecuteAuthorizationCodeAsync(CommandContext context, string authBase)
+    private async Task ExecuteAuthorizationCodeAsync(CommandContext context, string authBase, string authMethod)
     {
         var clientId = String.IsNullOrEmpty(ClientId) ? "test-webapp" : ClientId;
         var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "webapp-secret" : ClientSecret;
@@ -123,6 +140,10 @@ public sealed class TokenCommand : ICommandHandler
         var state = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
+        // nonce (OIDC Core §3.1.2.1): 要求ごとに生成し、ID Token の nonce と一致することを検証する
+        var nonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
         Console.WriteLine($"Requesting authorization code from {authBase.TrimEnd('/')}/connect/authorize ...");
         Console.WriteLine($"  client_id : {clientId}");
         Console.WriteLine($"  scope     : {scope}");
@@ -137,6 +158,7 @@ public sealed class TokenCommand : ICommandHandler
             ["code_challenge"] = codeChallenge,
             ["code_challenge_method"] = "S256",
             ["state"] = state,
+            ["nonce"] = nonce,
             ["username"] = username,
             ["password"] = password
         });
@@ -181,8 +203,6 @@ public sealed class TokenCommand : ICommandHandler
             ["grant_type"] = "authorization_code",
             ["code"] = code,
             ["redirect_uri"] = "http://localhost:5173/callback",
-            ["client_id"] = clientId,
-            ["client_secret"] = clientSecret,
             ["code_verifier"] = codeVerifier
         };
         if (!String.IsNullOrEmpty(Resource))
@@ -190,9 +210,10 @@ public sealed class TokenCommand : ICommandHandler
             tokenForm["resource"] = Resource;
         }
 
-        using var tokenContent = new FormUrlEncodedContent(tokenForm);
+        using var tokenRequest = ClientAuthHelper.CreateRequest(
+            $"{authBase.TrimEnd('/')}/connect/token", tokenForm, clientId, clientSecret, authMethod, ClientKeyPath);
 
-        var tokenResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", tokenContent);
+        var tokenResponse = await http.SendAsync(tokenRequest);
         var tokenBody = await tokenResponse.Content.ReadAsStringAsync();
 
         if (!tokenResponse.IsSuccessStatusCode)
@@ -217,6 +238,18 @@ public sealed class TokenCommand : ICommandHandler
             IssuedAt = DateTimeOffset.UtcNow
         };
 
+        // nonce 検証 (OIDC Core §3.1.3.7 #11): ID Token の nonce が送信した値と一致しなければ、この要求への応答ではないとみなして破棄する
+        if (store.IdToken is not null)
+        {
+            var idTokenNonce = ConsoleHelper.ReadJwtClaim(store.IdToken, "nonce");
+            if (!String.Equals(idTokenNonce, nonce, StringComparison.Ordinal))
+            {
+                ConsoleHelper.WriteError("nonce mismatch: the ID token does not belong to this request. Tokens were discarded.");
+                context.ExitCode = 1;
+                return;
+            }
+        }
+
         TokenFile.Save(store, TokenFilePath);
 
         ConsoleHelper.WriteSuccess("Token obtained successfully (authorization_code).");
@@ -231,6 +264,7 @@ public sealed class TokenCommand : ICommandHandler
         if (store.IdToken is not null)
         {
             ConsoleHelper.WriteInfo("id_token    ", ConsoleHelper.Truncate(store.IdToken, 60));
+            ConsoleHelper.WriteInfo("nonce       ", "verified");
             ConsoleHelper.PrintJwtClaims(store.IdToken);
         }
     }
@@ -247,17 +281,14 @@ public sealed class TokenCommand : ICommandHandler
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
+    // クライアント認証情報は ClientAuthHelper.CreateRequest が方式に応じて付与する
     private Dictionary<string, string> BuildClientCredentialsForm()
     {
-        var clientId = String.IsNullOrEmpty(ClientId) ? "test-client" : ClientId;
-        var clientSecret = String.IsNullOrEmpty(ClientSecret) ? "test-secret" : ClientSecret;
         var scope = String.IsNullOrEmpty(Scope) ? "api.read api.write" : Scope;
 
         var form = new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
-            ["client_id"] = clientId,
-            ["client_secret"] = clientSecret,
             ["scope"] = scope
         };
         if (!String.IsNullOrEmpty(Resource))
@@ -359,6 +390,12 @@ public sealed class RefreshCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--auth-method", Description = "Client authentication (client_secret_post | client_secret_basic | private_key_jwt | none)")]
+    public string AuthMethod { get; set; } = ClientAuthHelper.SecretPost;
+
+    [Option<string>("--client-key", Description = "Private JWK file for private_key_jwt (default: built-in dev key of test-jwt-client)")]
+    public string? ClientKeyPath { get; set; }
+
     [Option<string>("--resource", Description = "Resource indicator (RFC 8707): narrow the audience to this resource server URI")]
     public string? Resource { get; set; }
 
@@ -381,21 +418,28 @@ public sealed class RefreshCommand : ICommandHandler
 
         Console.WriteLine($"Refreshing token at {authBase.TrimEnd('/')}/connect/token ...");
 
+        var authMethod = ClientAuthHelper.Normalize(AuthMethod);
+        if (authMethod is null)
+        {
+            ConsoleHelper.WriteError(ClientAuthHelper.InvalidMethodMessage);
+            context.ExitCode = 1;
+            return;
+        }
+
         var form = new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
-            ["refresh_token"] = store.RefreshToken,
-            ["client_id"] = clientId,
-            ["client_secret"] = clientSecret
+            ["refresh_token"] = store.RefreshToken
         };
         if (!String.IsNullOrEmpty(Resource))
         {
             form["resource"] = Resource;
         }
 
-        using var content = new FormUrlEncodedContent(form);
+        using var request = ClientAuthHelper.CreateRequest(
+            $"{authBase.TrimEnd('/')}/connect/token", form, clientId, clientSecret, authMethod, ClientKeyPath);
 
-        var response = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/token", content);
+        var response = await http.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
@@ -454,6 +498,12 @@ public sealed class IntrospectCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--auth-method", Description = "Client authentication (client_secret_post | client_secret_basic | private_key_jwt | none)")]
+    public string AuthMethod { get; set; } = ClientAuthHelper.SecretPost;
+
+    [Option<string>("--client-key", Description = "Private JWK file for private_key_jwt (default: built-in dev key of test-jwt-client)")]
+    public string? ClientKeyPath { get; set; }
+
     [Option<string>("--token-type", "-t", Description = "Token to inspect (access | refresh)")]
     public string TokenType { get; set; } = "access";
 
@@ -484,15 +534,23 @@ public sealed class IntrospectCommand : ICommandHandler
 
         Console.WriteLine($"Introspecting {tokenType} token at {authBase.TrimEnd('/')}/connect/introspect ...");
 
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var authMethod = ClientAuthHelper.Normalize(AuthMethod);
+        if (authMethod is null)
+        {
+            ConsoleHelper.WriteError(ClientAuthHelper.InvalidMethodMessage);
+            context.ExitCode = 1;
+            return;
+        }
+
+        var form = new Dictionary<string, string>
         {
             ["token"] = token,
-            ["token_type_hint"] = tokenType == "refresh" ? "refresh_token" : "access_token",
-            ["client_id"] = clientId,
-            ["client_secret"] = clientSecret
-        });
+            ["token_type_hint"] = tokenType == "refresh" ? "refresh_token" : "access_token"
+        };
+        using var request = ClientAuthHelper.CreateRequest(
+            $"{authBase.TrimEnd('/')}/connect/introspect", form, clientId, clientSecret, authMethod, ClientKeyPath);
 
-        var response = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/introspect", content);
+        var response = await http.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
@@ -542,6 +600,12 @@ public sealed class RevokeCommand : ICommandHandler
     [Option<string>("--client-secret", Description = "Client secret")]
     public string ClientSecret { get; set; } = "test-secret";
 
+    [Option<string>("--auth-method", Description = "Client authentication (client_secret_post | client_secret_basic | private_key_jwt | none)")]
+    public string AuthMethod { get; set; } = ClientAuthHelper.SecretPost;
+
+    [Option<string>("--client-key", Description = "Private JWK file for private_key_jwt (default: built-in dev key of test-jwt-client)")]
+    public string? ClientKeyPath { get; set; }
+
     [Option<string>("--token-type", "-t", Description = "Token to revoke (all | access | refresh)")]
     public string TokenType { get; set; } = "all";
 
@@ -561,6 +625,14 @@ public sealed class RevokeCommand : ICommandHandler
             return;
         }
 
+        var authMethod = ClientAuthHelper.Normalize(AuthMethod);
+        if (authMethod is null)
+        {
+            ConsoleHelper.WriteError(ClientAuthHelper.InvalidMethodMessage);
+            context.ExitCode = 1;
+            return;
+        }
+
         var store = TokenFile.Load(TokenFilePath);
         if ((store is null) || ((store.AccessToken is null) && (store.RefreshToken is null)))
         {
@@ -576,7 +648,7 @@ public sealed class RevokeCommand : ICommandHandler
         // リフレッシュトークンの失効が本質。既定では両方を失効させる。
         if ((tokenType is "all" or "refresh") && (store.RefreshToken is not null))
         {
-            if (!await RevokeAsync(url, store.RefreshToken, "refresh_token", clientId, clientSecret, context))
+            if (!await RevokeAsync(url, store.RefreshToken, "refresh_token", clientId, clientSecret, authMethod, context))
             {
                 return;
             }
@@ -587,7 +659,7 @@ public sealed class RevokeCommand : ICommandHandler
 
         if ((tokenType is "all" or "access") && (store.AccessToken is not null))
         {
-            if (!await RevokeAsync(url, store.AccessToken, "access_token", clientId, clientSecret, context))
+            if (!await RevokeAsync(url, store.AccessToken, "access_token", clientId, clientSecret, authMethod, context))
             {
                 return;
             }
@@ -600,17 +672,16 @@ public sealed class RevokeCommand : ICommandHandler
         ConsoleHelper.WriteSuccess("Revocation completed and tokens cleared from file.");
     }
 
-    private async Task<bool> RevokeAsync(string url, string token, string hint, string clientId, string clientSecret, CommandContext context)
+    private async Task<bool> RevokeAsync(string url, string token, string hint, string clientId, string clientSecret, string authMethod, CommandContext context)
     {
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["token"] = token,
-            ["token_type_hint"] = hint,
-            ["client_id"] = clientId,
-            ["client_secret"] = clientSecret
-        });
+            ["token_type_hint"] = hint
+        };
+        using var request = ClientAuthHelper.CreateRequest(url, form, clientId, clientSecret, authMethod, ClientKeyPath);
 
-        var response = await http.PostAsync(url, content);
+        var response = await http.SendAsync(request);
         if (response.IsSuccessStatusCode)
         {
             return true;
@@ -859,6 +930,70 @@ public sealed class UserInfoCommand : ICommandHandler
         }
 
         Console.WriteLine(body);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// keygen
+// ---------------------------------------------------------------------------
+[Command("keygen", "Generate a P-256 key pair for private_key_jwt client authentication")]
+public sealed class KeygenCommand : ICommandHandler
+{
+    [Option<string>("--kid", Description = "Key ID (default: generated)")]
+    public string? Kid { get; set; }
+
+    [Option<string>("--out", "-o", Description = "Write the private JWK to this file (the public JWKS is always printed for registration)")]
+    public string? OutputPath { get; set; }
+
+    public async ValueTask ExecuteAsync(CommandContext context)
+    {
+        var kid = String.IsNullOrEmpty(Kid) ? "key-" + Guid.NewGuid().ToString("N")[..8] : Kid;
+        var (publicJwks, privateJwk) = ClientAuthHelper.GenerateKeyPair(kid);
+
+        ConsoleHelper.WriteSuccess("Key pair generated (ES256 / P-256).");
+        ConsoleHelper.WriteInfo("kid         ", kid);
+        ConsoleHelper.WriteInfo("public JWKS ", "register this as the client's jwks");
+        Console.WriteLine(publicJwks);
+
+        if (String.IsNullOrEmpty(OutputPath))
+        {
+            ConsoleHelper.WriteInfo("private JWK ", "keep this secret; pass it with --client-key <file>");
+            Console.WriteLine(privateJwk);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(OutputPath, privateJwk);
+            ConsoleHelper.WriteInfo("private JWK ", $"written to {OutputPath}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// assertion
+// ---------------------------------------------------------------------------
+[Command("assertion", "Print a private_key_jwt client assertion (for testing with curl)")]
+public sealed class AssertionCommand : ICommandHandler
+{
+    [Option<string>("--auth", "-a", Description = "AuthServer base URL")]
+    public string AuthServer { get; set; } = ServerUrls.AuthServer;
+
+    [Option<string>("--client-id", Description = "Client ID")]
+    public string ClientId { get; set; } = "test-jwt-client";
+
+    [Option<string>("--aud", Description = "Audience (default: the token endpoint URL)")]
+    public string? Audience { get; set; }
+
+    [Option<string>("--client-key", Description = "Private JWK file (default: built-in dev key of test-jwt-client)")]
+    public string? ClientKeyPath { get; set; }
+
+    public ValueTask ExecuteAsync(CommandContext context)
+    {
+        var authBase = (String.IsNullOrEmpty(AuthServer) ? ServerUrls.AuthServer : AuthServer).TrimEnd('/');
+        var clientId = String.IsNullOrEmpty(ClientId) ? "test-jwt-client" : ClientId;
+        var audience = String.IsNullOrEmpty(Audience) ? $"{authBase}/connect/token" : Audience;
+        var assertion = ClientAuthHelper.CreateClientAssertion(clientId, audience, ClientAuthHelper.LoadPrivateJwk(ClientKeyPath));
+        Console.WriteLine(assertion);
+        return ValueTask.CompletedTask;
     }
 }
 

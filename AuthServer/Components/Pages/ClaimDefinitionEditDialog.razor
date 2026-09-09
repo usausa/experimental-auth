@@ -1,0 +1,28 @@
+@* Custom claim definition add/edit dialog *@
+<MudDialog>
+    <TitleContent>@(IsNew ? "Add Claim" : "Edit Claim")</TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="claimType" Label="Claim Type" Required="true" Disabled="!IsNew"
+                      HelperText="Letters, digits, '_', '.', ':', '/' or '-' (e.g. department, employee_id)"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField @bind-Value="description" Label="Description"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudSelect T="string" @bind-Value="valueType" Label="Value Type"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2">
+            @foreach (var t in ValueTypes)
+            {
+                <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="requiredScope" Label="Required Scope"
+                      HelperText="Emitted only when this scope is granted (blank = always)"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudCheckBox @bind-Value="inAccessToken" Label="Include in access token" Color="Color.Primary" Class="mb-1" />
+        <MudCheckBox @bind-Value="inIdToken" Label="Include in ID token" Color="Color.Primary" Class="mb-1" />
+        <MudCheckBox @bind-Value="inUserInfo" Label="Include in UserInfo response" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>

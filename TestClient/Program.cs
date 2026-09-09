@@ -23,6 +23,8 @@ builder.ConfigureCommands(commands =>
     commands.AddCommand<IntrospectCommand>();
     commands.AddCommand<RevokeCommand>();
     commands.AddCommand<DeviceCommand>();
+    commands.AddCommand<KeygenCommand>();
+    commands.AddCommand<AssertionCommand>();
 });
 
 var host = builder.Build();

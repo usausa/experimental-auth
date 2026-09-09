@@ -24,7 +24,8 @@ public static class RevocationEndpoint
 
     private static async ValueTask<IResult> HandleRevoke(
         HttpContext context,
-        ClientService clientService,
+        ClientAuthenticator clientAuthenticator,
+        AuditLogService auditLog,
         TokenService tokenService,
         RefreshTokenService refreshTokenService,
         RevokedTokenService revokedTokenService,
@@ -37,17 +38,13 @@ public static class RevocationEndpoint
 
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
-        var (clientId, clientSecret) = ClientAuthentication.ResolveCredentials(context, form);
-        if (String.IsNullOrEmpty(clientId))
+        var auth = await clientAuthenticator.AuthenticateAsync(context, form);
+        if (auth.Client is null)
         {
-            return Error("invalid_client", "client_id is required", StatusCodes.Status401Unauthorized);
+            return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 
-        var client = await clientService.QueryClientAsync(clientId);
-        if ((client is null) || !ClientService.ValidateSecret(client, clientSecret))
-        {
-            return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
-        }
+        var client = auth.Client;
 
         var token = form["token"].ToString();
         if (String.IsNullOrEmpty(token))
@@ -74,6 +71,11 @@ public static class RevocationEndpoint
             logger.LogInformation(
                 "Revocation requested by {ClientId}: {Result}", client.ClientId, revoked ? "revoked" : "no matching token");
         }
+
+        await auditLog.RecordAsync(new AuditEntry(
+            AuditEvents.TokenRevoked, revoked ? AuditOutcome.Success : AuditOutcome.Info, client.ClientId, null, null,
+            context.Connection.RemoteIpAddress?.ToString(),
+            (String.IsNullOrEmpty(hint) ? "no hint" : "hint=" + hint) + (revoked ? "; revoked" : "; no matching token")));
 
         return Results.Ok();
     }

@@ -16,6 +16,9 @@ public partial class ResourceServerEditDialog
     public ResourceServerService ResourceServerService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public ISnackbar Snackbar { get; set; } = default!;
 
     [Parameter]
@@ -79,6 +82,8 @@ public partial class ResourceServerEditDialog
                 IsActive = isActive
             };
             await ResourceServerService.CreateAsync(server);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.ResourceServerChanged, AuditOutcome.Success, null, null, server.Name, null, $"created via admin UI; audience={server.Audience}"));
             Snackbar.Add("Resource server added.", Severity.Success);
         }
         else
@@ -92,6 +97,9 @@ public partial class ResourceServerEditDialog
                 IsActive = isActive
             };
             await ResourceServerService.UpdateAsync(server);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.ResourceServerChanged, AuditOutcome.Success, null, null, server.Name, null,
+                $"updated via admin UI; audience={server.Audience}; active={server.IsActive}"));
             Snackbar.Add("Resource server updated.", Severity.Success);
         }
 

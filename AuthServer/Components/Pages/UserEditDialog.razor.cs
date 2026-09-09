@@ -17,6 +17,9 @@ public partial class UserEditDialog
     public UserService UserService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public ISnackbar Snackbar { get; set; } = default!;
 
     [Parameter]
@@ -103,6 +106,8 @@ public partial class UserEditDialog
                 IsActive = isActive
             };
             await UserService.CreateAsync(user, password);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.UserCreated, AuditOutcome.Success, null, user.UserId, user.Username, null, "created via admin UI"));
             Snackbar.Add($"User '{user.Username}' created.", Severity.Success);
         }
         else
@@ -124,6 +129,9 @@ public partial class UserEditDialog
             existing.EmailVerified = emailVerified;
             existing.IsActive = isActive;
             await UserService.UpdateAsync(existing);
+            await AuditLogService.RecordAsync(new AuditEntry(
+                AuditEvents.UserUpdated, AuditOutcome.Success, null, existing.UserId, existing.Username, null,
+                $"updated via admin UI; active={existing.IsActive}"));
             Snackbar.Add($"User '{existing.Username}' updated.", Severity.Success);
         }
 

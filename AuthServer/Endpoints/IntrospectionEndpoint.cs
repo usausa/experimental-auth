@@ -27,7 +27,7 @@ public static class IntrospectionEndpoint
 
     private static async ValueTask<IResult> HandleIntrospect(
         HttpContext context,
-        ClientService clientService,
+        ClientAuthenticator clientAuthenticator,
         TokenService tokenService,
         RefreshTokenService refreshTokenService,
         RevokedTokenService revokedTokenService,
@@ -40,16 +40,10 @@ public static class IntrospectionEndpoint
 
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
-        var (clientId, clientSecret) = ClientAuthentication.ResolveCredentials(context, form);
-        if (String.IsNullOrEmpty(clientId))
+        var auth = await clientAuthenticator.AuthenticateAsync(context, form);
+        if (auth.Client is null)
         {
-            return Error("invalid_client", "client_id is required", StatusCodes.Status401Unauthorized);
-        }
-
-        var client = await clientService.QueryClientAsync(clientId);
-        if ((client is null) || !ClientService.ValidateSecret(client, clientSecret))
-        {
-            return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
+            return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 
         var token = form["token"].ToString();

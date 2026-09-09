@@ -57,6 +57,7 @@
         </MudTd>
         <MudTd Class="table-actions">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Label" Size="Size.Small" Color="Color.Info" OnClick="() => ShowClaimsDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Warning" OnClick="() => ShowPasswordDialogAsync(context)" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
         </MudTd>

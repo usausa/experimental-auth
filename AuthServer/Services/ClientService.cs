@@ -18,6 +18,7 @@ public sealed class ClientService(DbConnectionFactory dbFactory)
         scopes                 AS Scopes,
         token_endpoint_auth_method AS TokenEndpointAuthMethod,
         post_logout_redirect_uris  AS PostLogoutRedirectUris,
+        jwks                   AS Jwks,
         is_active              AS IsActive,
         created_at             AS CreatedAt,
         updated_at             AS UpdatedAt

@@ -1,6 +1,9 @@
 namespace AuthServer.Endpoints;
 
+using AuthServer.Models;
 using AuthServer.Services;
+
+using Microsoft.Extensions.Options;
 
 // Authorization Endpoint (RFC 6749 §3.1 / RFC 7636 PKCE)
 // POST /connect/authorize
@@ -34,7 +37,10 @@ public static class AuthorizeEndpoint
         HttpContext context,
         ClientService clientService,
         UserService userService,
-        AuthorizationCodeService codeService)
+        AuthorizationCodeService codeService,
+        ReplayGuardService replayGuard,
+        AuditLogService auditLog,
+        IOptions<AuthServerOptions> options)
     {
         if (!context.Request.HasFormContentType)
         {
@@ -119,6 +125,21 @@ public static class AuthorizeEndpoint
             grantedScopes = requestedScopes;
         }
 
+        // nonce 検証 (OIDC Core §3.1.2.1 / §3.1.3.7)。openid を含む要求では必須 (RequireNonce)。
+        // 形式は空白を含まない印字可能 ASCII 512 文字以内。再利用の検出はユーザー認証後に行う。
+        var includesOpenId = Array.IndexOf(grantedScopes, "openid") >= 0;
+        if (String.IsNullOrEmpty(nonce))
+        {
+            if (includesOpenId && options.Value.RequireNonce)
+            {
+                return Error("invalid_request", "nonce is required when the openid scope is requested");
+            }
+        }
+        else if ((nonce.Length > 512) || nonce.Any(c => c is <= ' ' or > '~'))
+        {
+            return Error("invalid_request", "nonce must be at most 512 printable ASCII characters without spaces");
+        }
+
         // ユーザー認証
         var username = form["username"].ToString();
         var password = form["password"].ToString();
@@ -127,10 +148,27 @@ public static class AuthorizeEndpoint
             return Error("invalid_request", "username and password are required");
         }
 
+        var ip = context.Connection.RemoteIpAddress?.ToString();
         var user = await userService.AuthenticateAsync(username, password);
         if (user is null)
         {
+            await auditLog.RecordAsync(new AuditEntry(
+                AuditEvents.Authorize, AuditOutcome.Failure, clientId, null, username, ip, "invalid username or password"));
             return Error("access_denied", "Invalid username or password", StatusCodes.Status401Unauthorized);
+        }
+
+        // nonce の一回性 (リプレイ検出)。認証後に記録することで、未認証の要求に nonce を消費させない。
+        // 記録期限 = 認可コードの寿命 + ID Token の寿命 (nonce がトークンとして生きている期間)
+        if (!String.IsNullOrEmpty(nonce))
+        {
+            var nonceExpiresAt = DateTime.UtcNow.AddSeconds(
+                options.Value.AuthorizationCodeLifetimeSeconds + options.Value.IdTokenLifetimeSeconds);
+            if (!await replayGuard.TryRegisterAsync(ReplayGuardService.AuthorizationNonce, clientId + ":" + nonce, clientId, nonceExpiresAt))
+            {
+                await auditLog.RecordAsync(new AuditEntry(
+                    AuditEvents.ReplayDetected, AuditOutcome.Failure, clientId, user.UserId, username, ip, "nonce reused"));
+                return Error("invalid_request", "nonce has already been used");
+            }
         }
 
         // 認可コード発行
@@ -140,6 +178,10 @@ public static class AuthorizeEndpoint
             codeChallenge, codeChallengeMethod,
             String.IsNullOrEmpty(nonce) ? null : nonce,
             String.IsNullOrEmpty(state) ? null : state);
+
+        await auditLog.RecordAsync(new AuditEntry(
+            AuditEvents.Authorize, AuditOutcome.Success, clientId, user.UserId, username, ip,
+            "scope=" + grantedScope + (String.IsNullOrEmpty(nonce) ? "; nonce=no" : "; nonce=yes")));
 
         return Results.Json(new
         {

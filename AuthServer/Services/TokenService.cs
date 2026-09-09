@@ -49,8 +49,10 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         return new AccessTokenResult(token, options.AccessTokenLifetimeSeconds, scopes);
     }
 
-    // Authorization Code Flow 用のアクセストークンを発行する。
-    public AccessTokenResult IssueAuthorizationCodeToken(string clientId, string userId, string username, string scopes, IReadOnlyList<string> audiences)
+    // Authorization Code Flow 用のアクセストークンを発行する。extraClaims はカスタムクレーム (型を保って出力する)。
+    public AccessTokenResult IssueAuthorizationCodeToken(
+        string clientId, string userId, string username, string scopes, IReadOnlyList<string> audiences,
+        IReadOnlyDictionary<string, object>? extraClaims = null)
     {
         var signingKey = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
@@ -77,6 +79,7 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         };
 
         ApplyAudiences(descriptor, audiences);
+        ApplyExtraClaims(descriptor, extraClaims);
 
         var handler = new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
         var token = handler.CreateToken(descriptor);
@@ -85,7 +88,9 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
 
     // OpenID Connect の ID Token を発行する。
     // authTime はユーザー認証時刻 (auth_time)、accessToken を渡すと at_hash (OIDC Core §3.1.3.6) を付与する。
-    public string IssueIdToken(string clientId, string userId, User user, string? nonce, string[] grantedScopes, DateTime authTime, string? accessToken)
+    public string IssueIdToken(
+        string clientId, string userId, User user, string? nonce, string[] grantedScopes, DateTime authTime, string? accessToken,
+        IReadOnlyDictionary<string, object>? extraClaims = null)
     {
         var signingKey = keyService.GetActiveKey();
         var now = DateTime.UtcNow;
@@ -141,6 +146,15 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
                 claims.Add(new Claim("email", user.Email));
             }
             typedClaims["email_verified"] = user.EmailVerified;
+        }
+
+        // カスタムクレーム (定義の in_id_token が有効で、required_scope が付与されているもの)
+        if (extraClaims is not null)
+        {
+            foreach (var (claimType, value) in extraClaims)
+            {
+                typedClaims[claimType] = value;
+            }
         }
 
         var descriptor = new SecurityTokenDescriptor
@@ -217,6 +231,31 @@ public sealed class TokenService(SigningKeyService keyService, IOptions<AuthServ
         {
             descriptor.Claims = new Dictionary<string, object> { ["aud"] = audiences.ToArray() };
         }
+    }
+
+    // カスタムクレームを型を保ったまま追加する。Claims ディクショナリが既にある (複数 aud) 場合はマージする。
+    private static void ApplyExtraClaims(SecurityTokenDescriptor descriptor, IReadOnlyDictionary<string, object>? extraClaims)
+    {
+        if ((extraClaims is null) || (extraClaims.Count == 0))
+        {
+            return;
+        }
+
+        var claims = new Dictionary<string, object>();
+        if (descriptor.Claims is not null)
+        {
+            foreach (var (claimType, value) in descriptor.Claims)
+            {
+                claims[claimType] = value;
+            }
+        }
+
+        foreach (var (claimType, value) in extraClaims)
+        {
+            claims[claimType] = value;
+        }
+
+        descriptor.Claims = claims;
     }
 
     // at_hash: アクセストークンの ASCII 表現を alg 対応のハッシュ (RS256 / ES256 はいずれも SHA-256) にかけ、

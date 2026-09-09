@@ -1,0 +1,63 @@
+@page "/claims"
+@rendermode InteractiveServer
+
+<PageTitle>Claims - AuthServer</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Define custom claims here, then set each user's value from the Users page. Reserved OIDC / JWT claim names cannot be used.
+    </MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.AddCircle" OnClick="ShowAddDialogAsync">Add Claim</MudButton>
+</MudStack>
+
+<MudTable Items="definitions" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.ClaimDefinition">
+    <HeaderContent>
+        <MudTh Class="col-icon"></MudTh>
+        <MudTh>Claim Type</MudTh>
+        <MudTh>Value Type</MudTh>
+        <MudTh>Required Scope</MudTh>
+        <MudTh Class="col-flag">Access Token</MudTh>
+        <MudTh Class="col-flag">ID Token</MudTh>
+        <MudTh Class="col-flag">UserInfo</MudTh>
+        <MudTh>Description</MudTh>
+        <MudTh Class="col-datetime">Updated</MudTh>
+        <MudTh Class="col-actions"></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <MudIcon Icon="@Icons.Material.Filled.Label" Color="Color.Primary" Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="Claim Type">
+            <MudText Class="text-monospace">@context.ClaimType</MudText>
+        </MudTd>
+        <MudTd DataLabel="Value Type">@context.ValueType</MudTd>
+        <MudTd DataLabel="Required Scope">
+            <MudText Class="text-monospace">@(context.RequiredScope ?? "-")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Access Token" Class="col-flag">
+            <MudIcon Icon="@(context.InAccessToken ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.RemoveCircleOutline)"
+                     Color="@(context.InAccessToken ? Color.Success : Color.Default)" Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="ID Token" Class="col-flag">
+            <MudIcon Icon="@(context.InIdToken ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.RemoveCircleOutline)"
+                     Color="@(context.InIdToken ? Color.Success : Color.Default)" Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="UserInfo" Class="col-flag">
+            <MudIcon Icon="@(context.InUserInfo ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.RemoveCircleOutline)"
+                     Color="@(context.InUserInfo ? Color.Success : Color.Default)" Size="Size.Small" />
+        </MudTd>
+        <MudTd DataLabel="Description">@(context.Description ?? "-")</MudTd>
+        <MudTd DataLabel="Updated">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+        </MudTd>
+        <MudTd Class="table-actions">
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4 mud-text-secondary">No custom claims are defined.</MudText>
+    </NoRecordsContent>
+</MudTable>

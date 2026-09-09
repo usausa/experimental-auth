@@ -16,6 +16,9 @@ public partial class Users
     public ResourceServerService ResourceServerService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public IDialogService DialogService { get; set; } = default!;
 
     [Inject]
@@ -104,6 +107,17 @@ public partial class Users
         }
     }
 
+    // カスタムクレームの値を編集する (定義は /claims で管理する)
+    private async Task ShowClaimsDialogAsync(User user)
+    {
+        var parameters = new DialogParameters<UserClaimsDialog>
+        {
+            { x => x.UserId, user.UserId },
+            { x => x.Username, user.Username }
+        };
+        await DialogService.ShowAsync<UserClaimsDialog>("User Claims", parameters);
+    }
+
     private async Task ShowPasswordDialogAsync(User user)
     {
         var parameters = new DialogParameters<UserPasswordDialog>
@@ -128,6 +142,8 @@ public partial class Users
         }
 
         await UserService.DeleteAsync(user.UserId);
+        await AuditLogService.RecordAsync(new AuditEntry(
+            AuditEvents.UserDeleted, AuditOutcome.Success, null, user.UserId, user.Username, null, "deleted via admin UI"));
         Snackbar.Add($"User '{user.Username}' deleted.", Severity.Success);
         await LoadUsersAsync();
     }

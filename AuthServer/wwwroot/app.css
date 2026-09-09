@@ -402,8 +402,17 @@ main {
 }
 
 .col-actions {
-    width: 100px;
+    width: 130px;
     white-space: nowrap;
+}
+
+.col-outcome {
+    width: 90px;
+}
+
+.col-flag {
+    width: 90px;
+    text-align: center;
 }
 
 /* ============================================================
@@ -420,4 +429,24 @@ main {
 
 .signing-keys-algorithm-select {
     max-width: 220px;
+}
+
+/* ============================================================
+   Pages: Audit logs
+   ============================================================ */
+
+.audit-filter-select {
+    max-width: 200px;
+}
+
+.audit-filter-field {
+    max-width: 200px;
+}
+
+.audit-filter-limit {
+    max-width: 100px;
+}
+
+.audit-detail {
+    word-break: break-word;
 }

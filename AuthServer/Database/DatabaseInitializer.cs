@@ -131,7 +131,58 @@ public static class DatabaseInitializer
         // v5: リフレッシュトークンに紐づく audience (JSON 配列)。refresh 時に resource を省略しても同じ audience を維持する (RFC 8707)
         (5, "ALTER TABLE refresh_tokens ADD COLUMN audiences TEXT"),
         // v6: デバイスコードの承認時刻 (ID Token の auth_time に使用)
-        (6, "ALTER TABLE device_codes ADD COLUMN authorized_at TEXT")
+        (6, "ALTER TABLE device_codes ADD COLUMN authorized_at TEXT"),
+        // v7: クライアントの公開鍵集合 (JWKS JSON)。private_key_jwt クライアント認証の署名検証に使う
+        (7, "ALTER TABLE clients ADD COLUMN jwks TEXT"),
+        // v8: リプレイ検知。一回限りの値 (クライアントアサーションの jti、認可要求の nonce) を期限つきで記録する
+        (8, """
+            CREATE TABLE IF NOT EXISTS replay_guard (
+                kind TEXT NOT NULL,
+                value TEXT NOT NULL,
+                client_id TEXT,
+                expires_at TEXT NOT NULL,
+                PRIMARY KEY (kind, value)
+            )
+            """),
+        // v9: 監査ログ
+        (9, """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                occurred_at TEXT NOT NULL,
+                event TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                client_id TEXT,
+                user_id TEXT,
+                subject TEXT,
+                ip_address TEXT,
+                detail TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred_at ON audit_logs (occurred_at);
+            """),
+        // v10: カスタムクレームの定義 (管理者が任意のクレームを定義し、出力先とスコープを指定する)
+        (10, """
+            CREATE TABLE IF NOT EXISTS claim_definitions (
+                claim_type TEXT PRIMARY KEY,
+                description TEXT,
+                value_type TEXT NOT NULL DEFAULT 'string',
+                required_scope TEXT,
+                in_access_token INTEGER NOT NULL DEFAULT 0,
+                in_id_token INTEGER NOT NULL DEFAULT 1,
+                in_userinfo INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """),
+        // v11: ユーザーごとのカスタムクレーム値
+        (11, """
+            CREATE TABLE IF NOT EXISTS user_claims (
+                user_id TEXT NOT NULL,
+                claim_type TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, claim_type)
+            )
+            """)
     ];
 
     public static void Initialize(DbConnectionFactory factory)

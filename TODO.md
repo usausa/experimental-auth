@@ -8,7 +8,7 @@
 - 🌐 = **ブラウザリダイレクト（方式 A / M3）が前提**。リダイレクトフローとサーバー側セッションがないと成立しない
 - 🖥️ = エンドユーザー向けのブラウザ画面は必要だが、リダイレクトフロー・セッションは不要（API-only のマイルストーンでも実装できる）
 
-*最終更新: 2026-09-05*
+*最終更新: 2026-09-06*
 
 ---
 
@@ -20,7 +20,8 @@
 |---|------|------|
 | M1 | トークンライフサイクル（Phase 4 前半）: `/connect/revoke`・`/connect/introspect`・JTI 失効リスト・SEC-04 ファミリー失効・スキーママイグレーション機構・鍵ローテーション・クリーンアップジョブ・TestClient `revoke` / `introspect` | ✅ 完了（2026-09-05） |
 | M2 | API-only 候補の一部: 鍵の事前公開（2 段階ローテーション）、Device Authorization Grant（承認画面 🖥️ + TestClient `device`）、Resource Indicators（RFC 8707、トークン要求時）、ES256、トークン有効期限の全設定化と推奨値（`SPEC.md` §8.3） | ✅ 完了（2026-09-05） |
-| M2' | M2 で見送った API-only 候補: DPoP、Dynamic Client Registration + Clients 管理画面、監査ログ / レート制限 | 🔲 M3 の後で必要なら |
+| M2' | API-only 追加分（2026-09-06 に前倒し）: JWT Replay 検出（`private_key_jwt` クライアント認証 + `jti` の一回性、`replay_guard` テーブル）、登録済みクライアント認証方式の強制、`nonce` の厳密検証、監査ログ + 確認画面 🖥️（`/audit-logs`）、カスタムクレーム + 管理画面 🖥️（`/claims`、Users 画面のクレーム編集） | ✅ 完了（2026-09-06） |
+| M2'' | 見送り中の API-only 候補: DPoP、Dynamic Client Registration + Clients 管理画面、Pairwise Subject、レート制限 | 🔲 M3 の後で必要なら |
 | M3 | 🌐 ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 次 |
 
 **アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
@@ -68,7 +69,7 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] パスワード/シークレットハッシュ化 (`Services/PasswordHasher.cs` PBKDF2-SHA256)
 - [x] `/.well-known/openid-configuration` 実装 (`Endpoints/DiscoveryEndpoint.cs`)
 - [x] `/.well-known/jwks.json` 実装 (`Endpoints/JwksEndpoint.cs`)
-- [x] `client_secret_post` / `client_secret_basic` によるクライアント認証
+- [x] クライアント認証: `client_secret_post` / `client_secret_basic` / `private_key_jwt`（RFC 7523。RS256 / ES256、`jti` の一回性）/ `none`（公開クライアント）。登録済みの `token_endpoint_auth_method` を強制（`Services/ClientAuthenticator.cs`、M2'）
 - [x] `/connect/token` (client_credentials) 実装 (`Endpoints/TokenEndpoint.cs`)
 - [x] JWT アクセストークン生成 (RS256 署名 / `Services/TokenService.cs`)
 - [x] 初期データ (テスト用 client / user) の投入 (`Database/DataSeeder.cs`)
@@ -102,7 +103,7 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] リフレッシュトークン生成・DB 保存
 - [x] `/connect/token` (refresh_token) 実装
 - [x] リフレッシュトークンローテーション（旧トークン失効 + `replaced_by_token_hash` 記録）
-- [x] TestClient: Authorization Code Flow 実装（方式 B のためローカル HTTP リスナーは不要）
+- [x] TestClient: Authorization Code Flow 実装（方式 B のためローカル HTTP リスナーは不要。`nonce` を生成して送信し、ID Token の `nonce` と一致しなければトークンを破棄 — M2'）
 - [x] TestClient: トークンリフレッシュ実装
 - [x] 結合テスト: Authorization Code Flow 全体フロー
 - [x] 結合テスト: PKCE 不一致で拒否確認（`invalid_grant`）
@@ -115,7 +116,7 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 
 ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みです。
 
-- [x] ID Token 生成（`nonce`）
+- [x] ID Token 生成（`nonce`。M2' で `openid` 要求時に必須化・形式検証・同一クライアントでの再利用拒否）
 - [x] Authorization Code Flow レスポンスに `id_token` 追加
 - [x] `/connect/userinfo` 実装 (`Endpoints/UserInfoEndpoint.cs`)
 - [x] スコープに基づくクレーム返却制御（`openid`, `profile`, `email`）
@@ -124,6 +125,7 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 結合テスト: UserInfo レスポンス検証
 - [x] ID Token に `at_hash`, `auth_time`, `amr` を追加（`email_verified` も boolean 化、有効期限は `IdTokenLifetimeSeconds` に分離）
 - [x] Discovery メタデータ拡張（`claims_supported`, `subject_types_supported`, `request_uri_parameter_supported`）
+- [x] 🖥️ カスタムクレーム（`claim_definitions` / `user_claims`。`/claims` で定義し、Users 画面でユーザーごとの値を設定。型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先を指定。`claims_supported` / `scopes_supported` に動的反映。M2'）
 - [ ] 🌐 Discovery に `response_modes_supported` を追加 ※M3（方式 B に該当する標準値がない）
 - [ ] 🌐 Dapper による同意情報データアクセス実装 ※M3
 - [ ] 🌐 `/account/consent` Blazor ページ実装 ※M3
@@ -144,11 +146,13 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 失効リスト管理（JTI ベース、DB 永続化）
 - [x] `/connect/introspect` 実装 (`Endpoints/IntrospectionEndpoint.cs`)
 - [x] 認可コード再使用時のファミリー失効（SEC-04）と、ローテーション後の RT リプレイ検知
-- [x] クライアント認証の共通化 (`Endpoints/ClientAuthentication.cs`) と AT 検証の共通化 (`TokenService.ValidateAccessTokenAsync`、`typ=at+jwt` 必須)
+- [x] クライアント認証の共通化 (`Services/ClientAuthenticator.cs`。M2' で static クラスから DI サービスに変更) と AT 検証の共通化 (`TokenService.ValidateAccessTokenAsync`、`typ=at+jwt` 必須)
 - [x] 鍵ローテーション機能（新鍵生成・旧鍵猶予期間・DB 管理。管理画面 `/signing-keys` と `SigningKeyRotationDays` による自動）
 - [x] JWKS キャッシュ制御ヘッダー（`Cache-Control`、`JwksCacheMaxAgeSeconds`）
 - [x] 期限切れ認可コード・リフレッシュトークンのクリーンアップジョブ (`Services/MaintenanceService.cs`)
 - [x] 期限切れ失効トークンのクリーンアップジョブ（猶予期間切れの鍵の退役も同じジョブ）
+- [x] リプレイ検出の共通基盤（`replay_guard`。一回限りの値を期限つきで記録し、期限切れは保守ジョブが削除。M2'）
+- [x] 🖥️ 監査ログ（`audit_logs`。クライアント認証失敗・トークン発行 / 拒否・認可・デバイス承認 / 拒否・失効・リプレイ検出・鍵操作・管理画面の変更を記録。`/audit-logs` で絞り込み表示。`AuditLogRetentionDays` 経過分は保守ジョブが削除。M2'）
 - [x] TestClient: トークン失効実装（`revoke --token-type all|access|refresh`）
 - [x] TestClient: イントロスペクション実装（`introspect --token-type access|refresh`）
 - [x] 結合テスト: 失効後は AuthServer（UserInfo / Introspection）が拒否し、ResourceServer は有効期限まで受理する（方式 3 の想定どおり）
@@ -175,6 +179,7 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [ ] 🖥️ `/account/password-reset` Blazor ページ実装（パスワードリセット。メール送信基盤が別途必要）
 - [ ] 🌐 `/account/consents` Blazor ページ実装（同意管理・取り消し） ※M3（同意機能が前提）
 - [x] TestClient: デバイスフロー実装（`device` コマンド。`slow_down` で間隔を +5 秒）
+- [x] TestClient: `--auth-method`（`client_secret_post` / `client_secret_basic` / `private_key_jwt` / `none`）と `--client-key`、`keygen`（P-256 鍵ペア生成）/ `assertion`（クライアントアサーション出力）コマンド（M2'）
 - [x] 🖥️ 結合テスト: デバイスフロー全体フロー（2026-09-05 実機確認: ブラウザで承認 → TestClient がトークン取得 → ResourceServer 200。`slow_down` / 他クライアントの拒否も確認）
 - [ ] 結合テスト: クライアント動的登録・管理
 - [ ] 🖥️ 結合テスト: ユーザー登録・パスワード変更
@@ -184,7 +189,7 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 ## Phase B: spec 範囲外の機能強化候補
 
 `__Other/FEATURE_ANALYSIS.md` の調査結果をもとにした、`SPEC.md` に含まれない機能の候補です。
-M2 で ES256 と Resource Indicators を実装しました。残りは M3（方式 A）の後に必要なものを選びます。優先度は以下の 3 軸で付けています。
+M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳密検証・監査ログ・カスタムクレーム管理 UI を実装しました。残りは M3（方式 A）の後に必要なものを選びます。優先度は以下の 3 軸で付けています。
 
 | 軸 | 内容 |
 |----|------|
@@ -198,7 +203,7 @@ M2 で ES256 と Resource Indicators を実装しました。残りは M3（方�
 
 ### B-1. 最優先（学習価値・需要ともに高い）
 
-- [ ] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`jti` ベースのキャッシュでリプレイ攻撃を防ぐ。Phase 4 の失効リスト（`revoked_tokens`）に相乗りできる。コスト: 低
+- [x] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`replay_guard` に一回限りの値（kind + value）を期限つきで記録。`private_key_jwt` の `jti`（RFC 7523 §3）と認可要求の `nonce` に適用し、再提示は `invalid_client` / `invalid_request` で拒否して監査ログ `replay_detected` に記録。AT の `jti` は失効リスト、認可コード / RT の再提示はファミリー失効（SEC-04）で扱う（M2'）
 - [ ] 🌐 ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※M3
 - [ ] ★★★ **Pairwise Subject Types** — OIDC Core §8。クライアントごとに異なる `sub` を返すプライバシー保護。コスト: 中
 - [ ] 🌐 ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。リダイレクト型の認可要求を保護する仕様のため方式 A が前提。コスト: 中 ※M3
@@ -208,9 +213,9 @@ M2 で ES256 と Resource Indicators を実装しました。残りは M3（方�
 
 - [ ] 🌐 ★★☆ **Front-Channel Logout** — OIDC Front-Channel Logout 1.0。各 RP へ iframe でセッション終了を通知。コスト: 中 ※M3
 - [ ] 🌐 ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。OP 側セッションの終了が発火点のため方式 A が前提。コスト: 中 ※M3
-- [ ] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。ID Token リプレイ対策（`state` の検証は Phase 2 に計上済み）。コスト: 低
+- [x] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。`openid` 要求時は必須（`RequireNonce`）、空白を含まない印字可能 ASCII 512 文字以内、同一クライアントでの再利用を拒否（認可コード + ID Token の寿命の間記録）。TestClient は ID Token の `nonce` 一致を検証（M2'）
 - [ ] 🌐 ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※M3
-- [ ] ★★☆ **監査ログ** — ログイン・トークン発行・失敗履歴の永続化。コスト: 低（テーブル追加）
+- [x] 🖥️ ★★☆ **監査ログ** — `audit_logs` + `/audit-logs` 画面（イベント / 結果 / クライアント / 自由検索で絞り込み）。保持期間は `AuditLogRetentionDays`（M2'）
 - [ ] 🖥️ ★☆☆ **TOTP / MFA** — RFC 6238 / RFC 4226。パスワード + TOTP の 2 要素認証。検証は方式 B の `POST /connect/authorize` に `totp` を足せば API で完結し、登録（QR 表示）だけ画面が必要。コスト: 中
 - [ ] 🖥️ ★☆☆ **メール確認** — OIDC Core §5.1。`email_verified` クレームと連動。確認リンクの着地画面とメール送信基盤が必要。コスト: 中
 
@@ -220,9 +225,8 @@ M2 で ES256 と Resource Indicators を実装しました。残りは M3（方�
 - [ ] ★★☆ **DPoP** — RFC 9449。Bearer トークン盗難対策（所有証明）。コスト: 高
 - [x] ★★☆ **Resource Indicators** — RFC 8707。トークン要求時の `resource`（複数可）を登録済みリソースサーバーに解決し `aud`（文字列 / 配列）へ。RT は元の付与範囲を保持し、refresh で絞り込み可（M2）
 - [ ] Resource Indicators: 認可要求時（`/connect/authorize`、`/connect/device/authorize`）の `resource` 束縛（RFC 8707 §2.1）。現在はトークン要求時（§2.2）のみ
-- [ ] ★☆☆ **CIBA** — OpenID CIBA 1.0。スマートフォン承認フロー。コスト: 高
 - [ ] ★☆☆ **ユーザーグループ / ロール管理** — グループ単位のクレーム付与・アクセス制御。コスト: 中
-- [ ] ★☆☆ **カスタムクレーム管理 UI** — 管理者が任意クレームを定義・付与。コスト: 中
+- [x] 🖥️ ★☆☆ **カスタムクレーム管理 UI** — `/claims` で定義（型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先）、Users 画面でユーザーごとの値を設定。予約クレーム名は定義不可（M2'）
 - [ ] ★☆☆ **SCIM 2.0** — RFC 7642〜7644。ユーザープロビジョニング標準。コスト: 高
 
 ### B-4. 対象外（実装しない）
@@ -237,11 +241,12 @@ M2 で ES256 と Resource Indicators を実装しました。残りは M3（方�
 | Docker ラベル / Kubernetes 認証 | インフラ層の話で OAuth/OIDC の範囲外 |
 | Authlete SaaS 型 | 外部委譲はフルスクラッチ学習の趣旨に反する |
 | 複数 DB バックエンド | SQLite で十分。運用課題 |
+| CIBA（OpenID CIBA 1.0） | 2026-09-06 に不要と判断。バックチャネルで別デバイスに承認を求める流れは、実装済みの Device Authorization Grant で学習範囲を代替できる |
 
 ### 着手順
 
-冒頭の「マイルストーン計画」を参照してください。M2 は完了し、次は M3（🌐 方式 A）です。
-M2 で見送った 🌐 なしの候補（DPoP、DCR、Pairwise Sub、`nonce` 検証、監査ログ、レート制限）は M3 の後に必要なものを選びます。
+冒頭の「マイルストーン計画」を参照してください。M2 と M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）は完了し、次は M3（🌐 方式 A）です。
+残る 🌐 なしの候補（DPoP、DCR、Pairwise Sub、レート制限）は M3 の後に必要なものを選びます。
 
 ---
 

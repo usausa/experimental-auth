@@ -1,6 +1,7 @@
 namespace AuthServer.Endpoints;
 
 using AuthServer.Models;
+using AuthServer.Services;
 
 using Microsoft.Extensions.Options;
 
@@ -23,9 +24,29 @@ public static class DiscoveryEndpoint
     // 取得するための標準エンドポイント(RFC 8414 / OpenID Connect Discovery 1.0)。
     //--------------------------------------------------------------------------------
 
-    private static IResult HandleDiscovery(HttpContext context, IOptions<AuthServerOptions> options)
+    private static readonly string[] BaseScopes = ["openid", "profile", "email", "api.read", "api.write"];
+
+    private static readonly string[] BaseClaims =
+    [
+        "sub", "iss", "aud", "exp", "iat", "nbf", "jti", "azp", "nonce", "auth_time", "amr", "at_hash",
+        "name", "given_name", "family_name", "preferred_username", "email", "email_verified"
+    ];
+
+    private static async Task<IResult> HandleDiscovery(IOptions<AuthServerOptions> options, CustomClaimService customClaimService)
     {
         var issuer = options.Value.Issuer.TrimEnd('/');
+
+        // カスタムクレームの定義に応じて claims_supported / scopes_supported を動的に組み立てる
+        var definitions = await customClaimService.QueryDefinitionListAsync();
+        var scopesSupported = BaseScopes
+            .Concat(definitions.Select(d => d.RequiredScope).OfType<string>().Where(s => s.Length > 0))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var claimsSupported = BaseClaims
+            .Concat(definitions.Select(d => d.ClaimType))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
         var doc = new
         {
             issuer,
@@ -38,18 +59,15 @@ public static class DiscoveryEndpoint
             jwks_uri = $"{issuer}/.well-known/jwks.json",
             grant_types_supported = new[] { "client_credentials", "authorization_code", "refresh_token", DeviceAuthorizationEndpoint.GrantType },
             response_types_supported = new[] { "code" },
-            token_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
-            revocation_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
-            introspection_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
+            token_endpoint_auth_methods_supported = ClientAuthenticator.SupportedAuthMethods,
+            token_endpoint_auth_signing_alg_values_supported = ClientAuthenticator.SupportedAssertionAlgorithms,
+            revocation_endpoint_auth_methods_supported = ClientAuthenticator.SupportedAuthMethods,
+            introspection_endpoint_auth_methods_supported = ClientAuthenticator.SupportedAuthMethods,
             id_token_signing_alg_values_supported = new[] { "RS256", "ES256" },
-            scopes_supported = new[] { "openid", "profile", "email", "api.read", "api.write" },
+            scopes_supported = scopesSupported,
             code_challenge_methods_supported = new[] { "S256" },
             subject_types_supported = new[] { "public" },
-            claims_supported = new[]
-            {
-                "sub", "iss", "aud", "exp", "iat", "nbf", "jti", "azp", "nonce", "auth_time", "amr", "at_hash",
-                "name", "given_name", "family_name", "preferred_username", "email", "email_verified"
-            },
+            claims_supported = claimsSupported,
             // 省略時の既定値が true のため、未対応であることを明示する
             request_uri_parameter_supported = false
         };

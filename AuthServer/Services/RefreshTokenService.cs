@@ -18,7 +18,7 @@ using Microsoft.Extensions.Options;
 // 同じコードから派生したトークン群 (ファミリー) をまとめて失効できるようにする。
 // 有効期限は 2 段構え: expires_at はローテーションごとに延びる無操作タイムアウト、
 // family_expires_at は最初の認可からの絶対期限でローテーションでは延びない。
-public sealed class RefreshTokenService(DbConnectionFactory dbFactory, IOptions<AuthServerOptions> options)
+public sealed class RefreshTokenService(DbConnectionFactory dbFactory, AuditLogService auditLogService, IOptions<AuthServerOptions> options)
 {
     private readonly AuthServerOptions options = options.Value;
 
@@ -81,7 +81,11 @@ public sealed class RefreshTokenService(DbConnectionFactory dbFactory, IOptions<
         {
             if (!IsNull((object?)row.replaced_by_token_hash) && (sourceCodeHash is not null))
             {
-                await RevokeFamilyAsync(connection, sourceCodeHash);
+                var revoked = await RevokeFamilyAsync(connection, sourceCodeHash);
+                await auditLogService.RecordAsync(new AuditEntry(
+                    AuditEvents.ReplayDetected, AuditOutcome.Failure, (string)row.client_id,
+                    IsNull((object?)row.user_id) ? null : (string?)row.user_id, null, null,
+                    $"refresh token replay (a rotated token was presented again); revoked {revoked} token(s) of the family"));
             }
 
             return null;

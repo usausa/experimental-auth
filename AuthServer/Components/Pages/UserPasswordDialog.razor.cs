@@ -15,6 +15,9 @@ public partial class UserPasswordDialog
     public UserService UserService { get; set; } = default!;
 
     [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
+    [Inject]
     public ISnackbar Snackbar { get; set; } = default!;
 
     [Parameter]
@@ -41,6 +44,8 @@ public partial class UserPasswordDialog
         }
 
         await UserService.ChangePasswordAsync(UserId, newPassword);
+        await AuditLogService.RecordAsync(new AuditEntry(
+            AuditEvents.UserPasswordChanged, AuditOutcome.Success, null, UserId, Username, null, "changed via admin UI"));
         Snackbar.Add($"Password changed for '{Username}'.", Severity.Success);
         MudDialog.Close(DialogResult.Ok(true));
     }

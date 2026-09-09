@@ -13,6 +13,9 @@ public sealed class Client
     public string Scopes { get; set; } = string.Empty;
     public string TokenEndpointAuthMethod { get; set; } = "client_secret_post";
     public string? PostLogoutRedirectUris { get; set; }
+
+    // private_key_jwt 用の公開鍵集合 (JWKS JSON)。token_endpoint_auth_method = private_key_jwt のときに必須
+    public string? Jwks { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

@@ -45,6 +45,8 @@ dotnet run -- <command> [options]
 | `introspect` | 保存済みトークン（access / refresh）の状態を検査する |
 | `revoke` | 保存済みトークンを失効させる（既定は access / refresh の両方） |
 | `device` | Device Authorization Grant でトークンを取得する（コードを別のブラウザで承認） |
+| `keygen` | `private_key_jwt` 用の P-256 鍵ペアを生成する（公開 JWKS をクライアントに登録し、秘密 JWK を `--client-key` で使う） |
+| `assertion` | `private_key_jwt` のクライアントアサーション（JWT）を出力する（curl での検証用） |
 
 ### ユースケース別使用例
 
@@ -170,6 +172,24 @@ dotnet run -- device --scope "openid profile email api.read"
 dotnet run -- api --resource http://localhost:5180 --path /api/protected
 ```
 
+#### ユースケース 6: private_key_jwt でクライアント認証する(RFC 7523)
+
+シークレットの代わりに秘密鍵で署名した JWT(client_assertion)でクライアントを認証します。
+`test-jwt-client` は ES256 の公開鍵が登録済みで、対応する開発用の秘密鍵を TestClient が同梱しています。
+サーバーは登録された認証方式を強制するため、`test-jwt-client` にシークレットを送っても拒否されます。
+
+```bash
+# 1. private_key_jwt で client_credentials トークンを取得(同梱の開発用秘密鍵を使用)
+dotnet run -- token --auth-method private_key_jwt --client-id test-jwt-client --scope "api.read"
+
+# 2. 自分の鍵を使う場合: 鍵ペアを生成し、公開 JWKS を clients.jwks に登録して秘密 JWK を渡す
+dotnet run -- keygen --kid my-key-1 --out my-key.json
+dotnet run -- token --auth-method private_key_jwt --client-id my-client --client-key my-key.json
+
+# 3. curl で試す場合はアサーションだけを出力できる(同じアサーションの再送は jti のリプレイとして拒否される)
+dotnet run -- assertion --client-id test-jwt-client
+```
+
 ### 各コマンドのオプション一覧
 
 #### `token`
@@ -180,6 +200,8 @@ dotnet run -- api --resource http://localhost:5180 --path /api/protected
 | `--grant` | `-g` | `client_credentials` | グラントタイプ (`client_credentials` \| `authorization_code`) |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--auth-method` | — | `client_secret_post` | クライアント認証方式 (`client_secret_post` \| `client_secret_basic` \| `private_key_jwt` \| `none`) |
+| `--client-key` | — | 同梱の開発用鍵 (`test-jwt-client`) | `private_key_jwt` で使う秘密 JWK ファイル |
 | `--scope` | `-s` | `api.read api.write` | スコープ(スペース区切り) |
 | `--username` | `-u` | — | ユーザー名(`authorization_code` グラント用) |
 | `--password` | `-p` | — | パスワード(`authorization_code` グラント用) |
@@ -202,6 +224,8 @@ dotnet run -- api --resource http://localhost:5180 --path /api/protected
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--auth-method` | — | `client_secret_post` | クライアント認証方式 (`client_secret_post` \| `client_secret_basic` \| `private_key_jwt` \| `none`) |
+| `--client-key` | — | 同梱の開発用鍵 (`test-jwt-client`) | `private_key_jwt` で使う秘密 JWK ファイル |
 | `--resource` | — | — | 元の付与範囲内で audience を絞り込む(RFC 8707 §2.2)。範囲外は `invalid_target` |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
 
@@ -212,6 +236,8 @@ dotnet run -- api --resource http://localhost:5180 --path /api/protected
 | `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
+| `--auth-method` | — | `client_secret_post` | クライアント認証方式 (`client_secret_post` \| `client_secret_basic` \| `private_key_jwt` \| `none`) |
+| `--client-key` | — | 同梱の開発用鍵 (`test-jwt-client`) | `private_key_jwt` で使う秘密 JWK ファイル |
 | `--token-type` | `-t` | `access`（introspect）/ `all`（revoke） | 対象トークン。introspect: `access` \| `refresh`、revoke: `all` \| `access` \| `refresh` |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス |
 
@@ -244,7 +270,7 @@ dotnet run -- api --resource http://localhost:5180 --path /api/protected
 |--------------|---------|---------|-------|------|
 | `/.well-known/openid-configuration` | GET | ✅ 実装済み | 1 | OIDC Discovery ドキュメントを返す |
 | `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
-| `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` グラント対応) |
+| `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` / `device_code` グラント。クライアント認証は `client_secret_post` / `client_secret_basic` / `private_key_jwt` / `none` で、登録済みの方式を強制) |
 | `/connect/authorize` | POST | ✅ 実装済み | 2 | ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
 | `/connect/userinfo` | GET | ✅ 実装済み | 2 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
 | `/connect/revoke` | POST | ✅ 実装済み | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
@@ -252,6 +278,8 @@ dotnet run -- api --resource http://localhost:5180 --path /api/protected
 | `/connect/logout` | GET/POST | 🔲 未実装 | 4 | RP-Initiated Logout(セッション破棄) |
 | `/connect/device/authorize` | POST | ✅ 実装済み | 5 | Device Authorization Grant の開始エンドポイント(RFC 8628)。`device_code` / `user_code` / `verification_uri` を返す |
 | `/account/device` | Blazor | ✅ 実装済み | 5 | 🖥️ デバイスコードの承認画面(user_code + ユーザー認証、Approve / Deny) |
+| `/claims` | Blazor | ✅ 実装済み | — | 🖥️ カスタムクレーム定義の管理画面(ユーザーごとの値は `/users` から設定) |
+| `/audit-logs` | Blazor | ✅ 実装済み | — | 🖥️ 監査ログの確認画面(認証失敗・トークン発行 / 拒否・リプレイ検出・管理操作など) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
 > **`/connect/authorize` の設計について**

@@ -59,6 +59,10 @@ builder.Services.AddSingleton<AuthorizationCodeService>();
 builder.Services.AddSingleton<RefreshTokenService>();
 builder.Services.AddSingleton<RevokedTokenService>();
 builder.Services.AddSingleton<DeviceCodeService>();
+builder.Services.AddSingleton<ReplayGuardService>();
+builder.Services.AddSingleton<AuditLogService>();
+builder.Services.AddSingleton<CustomClaimService>();
+builder.Services.AddSingleton<ClientAuthenticator>();
 
 // 期限切れデータのクリーンアップと鍵の自動ローテーション。
 // 保守ジョブの例外でホスト全体が停止しないようにする (例外はホストがログに記録する)。

@@ -29,7 +29,8 @@ public static class DeviceAuthorizationEndpoint
 
     private static async ValueTask<IResult> HandleDeviceAuthorization(
         HttpContext context,
-        ClientService clientService,
+        ClientAuthenticator clientAuthenticator,
+        AuditLogService auditLog,
         DeviceCodeService deviceCodeService,
         IOptions<AuthServerOptions> options)
     {
@@ -40,18 +41,14 @@ public static class DeviceAuthorizationEndpoint
 
         var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
-        // 公開クライアントは client_id のみ、機密クライアントは client_secret も検証する (RFC 8628 §3.1 → RFC 6749 §3.2.1)
-        var (clientId, clientSecret) = ClientAuthentication.ResolveCredentials(context, form);
-        if (String.IsNullOrEmpty(clientId))
+        // 登録された認証方式で検証する: 公開クライアントは client_id のみ、機密クライアントはシークレットまたは client_assertion (RFC 8628 §3.1 → RFC 6749 §3.2.1)
+        var auth = await clientAuthenticator.AuthenticateAsync(context, form);
+        if (auth.Client is null)
         {
-            return Error("invalid_client", "client_id is required", StatusCodes.Status401Unauthorized);
+            return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 
-        var client = await clientService.QueryClientAsync(clientId);
-        if ((client is null) || !ClientService.ValidateSecret(client, clientSecret))
-        {
-            return Error("invalid_client", "Client authentication failed", StatusCodes.Status401Unauthorized);
-        }
+        var client = auth.Client;
 
         if (!client.AllowsGrantType(GrantType))
         {
@@ -79,6 +76,9 @@ public static class DeviceAuthorizationEndpoint
         }
 
         var authorization = await deviceCodeService.IssueAsync(client.ClientId, String.Join(' ', granted));
+        await auditLog.RecordAsync(new AuditEntry(
+            AuditEvents.DeviceAuthorize, AuditOutcome.Success, client.ClientId, null, null,
+            context.Connection.RemoteIpAddress?.ToString(), $"scope={String.Join(' ', granted)}; user_code={authorization.UserCode}"));
         var issuer = options.Value.Issuer.TrimEnd('/');
         var verificationUri = $"{issuer}/account/device";
 

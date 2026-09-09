@@ -34,6 +34,35 @@ internal static class ConsoleHelper
 
     public static void BeginProgress(string message) => Console.Write(message + " ");
 
+    // JWT のペイロードから文字列クレームを 1 つ読む (署名検証はしない)。見つからなければ null。
+    public static string? ReadJwtClaim(string jwt, string name)
+    {
+        var parts = jwt.Split('.');
+        if (parts.Length != 3)
+        {
+            return null;
+        }
+
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '=');
+
+        try
+        {
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(payload));
+            return doc.RootElement.TryGetProperty(name, out var value) && (value.ValueKind == JsonValueKind.String)
+                ? value.GetString()
+                : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     // JWT のペイロード (第 2 セグメント) を base64url デコードしてクレームを表示する。署名検証は行わない。
     public static void PrintJwtClaims(string jwt)
     {

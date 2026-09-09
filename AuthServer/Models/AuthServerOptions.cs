@@ -46,4 +46,13 @@ public sealed class AuthServerOptions
 
     // 期限切れデータのクリーンアップと鍵の自動ローテーションを実行する間隔 (分)
     public int MaintenanceIntervalMinutes { get; set; } = 60;
+
+    // private_key_jwt のクライアントアサーションに許容する寿命 (秒)。exp - iat がこれを超えるものは拒否する (RFC 7523 §3)
+    public int ClientAssertionMaxLifetimeSeconds { get; set; } = 300;
+
+    // openid スコープを含む認可要求に nonce を必須にする。ID Token のリプレイ対策を厳密化する
+    public bool RequireNonce { get; set; } = true;
+
+    // 監査ログの保持期間 (日)。保守ジョブがこれより古いエントリを削除する
+    public int AuditLogRetentionDays { get; set; } = 90;
 }

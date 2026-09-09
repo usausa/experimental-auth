@@ -1,0 +1,72 @@
+@page "/audit-logs"
+@rendermode InteractiveServer
+
+<PageTitle>Audit Logs - AuthServer</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+    <MudSelect T="string" Label="Event" @bind-Value="eventFilter" Clearable="true"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Class="audit-filter-select">
+        @foreach (var e in eventTypes)
+        {
+            <MudSelectItem T="string" Value="@e">@e</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSelect T="string" Label="Outcome" @bind-Value="outcomeFilter" Clearable="true"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Class="audit-filter-select">
+        @foreach (var o in Outcomes)
+        {
+            <MudSelectItem T="string" Value="@o">@o</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField @bind-Value="clientFilter" Label="Client ID"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="audit-filter-field" />
+    <MudTextField @bind-Value="searchText" Label="Search" Placeholder="user / subject / detail"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="audit-filter-field" />
+    <MudSelect T="int" Label="Limit" @bind-Value="limit"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Class="audit-filter-limit">
+        <MudSelectItem T="int" Value="100">100</MudSelectItem>
+        <MudSelectItem T="int" Value="500">500</MudSelectItem>
+        <MudSelectItem T="int" Value="1000">1000</MudSelectItem>
+    </MudSelect>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Search" OnClick="LoadAsync">Search</MudButton>
+</MudStack>
+
+<MudTable Items="logs" Dense="true" Hover="true" Elevation="1" Loading="isLoading" T="AuthServer.Models.AuditLog">
+    <HeaderContent>
+        <MudTh Class="col-datetime">Time</MudTh>
+        <MudTh>Event</MudTh>
+        <MudTh Class="col-outcome">Outcome</MudTh>
+        <MudTh>Client</MudTh>
+        <MudTh>User</MudTh>
+        <MudTh>Subject</MudTh>
+        <MudTh>IP</MudTh>
+        <MudTh>Detail</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Time">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Event">
+            <MudText Class="text-monospace">@context.Event</MudText>
+        </MudTd>
+        <MudTd DataLabel="Outcome">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetOutcomeColor(context.Outcome)">@context.Outcome</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Client">
+            <MudText Class="text-monospace">@(context.ClientId ?? "-")</MudText>
+        </MudTd>
+        <MudTd DataLabel="User">
+            <MudText Class="text-monospace">@(context.UserId ?? "-")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Subject">@(context.Subject ?? "-")</MudTd>
+        <MudTd DataLabel="IP">@(context.IpAddress ?? "-")</MudTd>
+        <MudTd DataLabel="Detail">
+            <MudText Typo="Typo.body2" Class="audit-detail">@(context.Detail ?? "-")</MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4 mud-text-secondary">No audit log entries match the filter.</MudText>
+    </NoRecordsContent>
+</MudTable>

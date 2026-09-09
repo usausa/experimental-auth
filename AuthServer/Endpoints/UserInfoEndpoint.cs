@@ -29,7 +29,8 @@ public static class UserInfoEndpoint
         HttpContext context,
         TokenService tokenService,
         RevokedTokenService revokedTokenService,
-        UserService userService)
+        UserService userService,
+        CustomClaimService customClaimService)
     {
         var authHeader = context.Request.Headers.Authorization.ToString();
         if (String.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
@@ -97,6 +98,13 @@ public static class UserInfoEndpoint
                 response["email"] = user.Email;
             }
             response["email_verified"] = user.EmailVerified;
+        }
+
+        // カスタムクレーム (定義の in_userinfo が有効で、required_scope が付与されているもの)
+        var customClaims = await customClaimService.ResolveForUserAsync(user.UserId, scopes);
+        foreach (var (claimType, value) in customClaims.UserInfo)
+        {
+            response[claimType] = value;
         }
 
         return Results.Json(response);

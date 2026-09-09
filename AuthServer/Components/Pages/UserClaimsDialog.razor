@@ -1,0 +1,23 @@
+@* Per-user custom claim values *@
+<MudDialog>
+    <TitleContent>Claims for @Username</TitleContent>
+    <DialogContent>
+        @if (rows.Count == 0)
+        {
+            <MudText Class="mud-text-secondary">No custom claims are defined. Define claims on the Claims page first.</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Leave a value blank to remove the claim from this user.</MudText>
+            @foreach (var row in rows)
+            {
+                <MudTextField @bind-Value="row.Value" Label="@row.Label" HelperText="@row.Help"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="rows.Count == 0">Save</MudButton>
+    </DialogActions>
+</MudDialog>

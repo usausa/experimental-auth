@@ -17,6 +17,9 @@ public partial class DeviceActivation
     [Inject]
     public UserService UserService { get; set; } = default!;
 
+    [Inject]
+    public AuditLogService AuditLogService { get; set; } = default!;
+
     // verification_uri_complete の ?user_code=XXXX-XXXX を初期値に使う
     [SupplyParameterFromQuery(Name = "user_code")]
     public string? UserCodeQuery { get; set; }
@@ -70,6 +73,9 @@ public partial class DeviceActivation
             var user = await UserService.AuthenticateAsync(username, password);
             if (user is null)
             {
+                await AuditLogService.RecordAsync(new AuditEntry(
+                    AuditEvents.Authorize, AuditOutcome.Failure, pendingRequest?.ClientId, null, username, null,
+                    "device activation: invalid username or password"));
                 errorMessage = "Invalid username or password.";
                 return;
             }
@@ -77,6 +83,12 @@ public partial class DeviceActivation
             var result = approve
                 ? await DeviceCodeService.ApproveAsync(userCode, user.UserId)
                 : await DeviceCodeService.DenyAsync(userCode);
+
+            await AuditLogService.RecordAsync(new AuditEntry(
+                approve ? AuditEvents.DeviceApproved : AuditEvents.DeviceDenied,
+                result is DeviceApprovalResult.Approved or DeviceApprovalResult.Denied ? AuditOutcome.Success : AuditOutcome.Failure,
+                pendingRequest?.ClientId, user.UserId, username, null,
+                $"user_code={DeviceCodeService.NormalizeUserCode(userCode)}; result={result}"));
 
             switch (result)
             {
