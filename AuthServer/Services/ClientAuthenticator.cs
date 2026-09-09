@@ -32,7 +32,7 @@ public sealed class ClientAuthenticator(
 
     private readonly AuthServerOptions options = options.Value;
 
-    public async Task<ClientAuthenticationResult> AuthenticateAsync(HttpContext context, IFormCollection form)
+    public Task<ClientAuthenticationResult> AuthenticateAsync(HttpContext context, IFormCollection form)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(form);
@@ -42,10 +42,10 @@ public sealed class ClientAuthenticator(
         var assertionType = form["client_assertion_type"].ToString();
         if (!String.IsNullOrEmpty(assertion) || !String.IsNullOrEmpty(assertionType))
         {
-            return await AuthenticateWithAssertionAsync(context, form, assertion, assertionType, ip);
+            return AuthenticateWithAssertionAsync(context, form, assertion, assertionType, ip);
         }
 
-        return await AuthenticateWithSecretAsync(context, form, ip);
+        return AuthenticateWithSecretAsync(context, form, ip);
     }
 
     private async Task<ClientAuthenticationResult> AuthenticateWithSecretAsync(HttpContext context, IFormCollection form, string? ip)

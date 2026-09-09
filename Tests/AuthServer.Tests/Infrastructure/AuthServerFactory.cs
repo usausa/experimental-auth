@@ -35,14 +35,25 @@ public class AuthServerFactory : WebApplicationFactory<Program>
         }
     }
 
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync().ConfigureAwait(false);
+        DeleteDataDirectory();
+        GC.SuppressFinalize(this);
+    }
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (!disposing)
+        if (disposing)
         {
-            return;
+            DeleteDataDirectory();
         }
+    }
 
+    // 同期・非同期どちらの破棄経路からも呼ばれるので、二重に呼ばれても問題ないようにする
+    private void DeleteDataDirectory()
+    {
         SqliteConnection.ClearAllPools();
         try
         {

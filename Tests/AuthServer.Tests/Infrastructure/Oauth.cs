@@ -38,10 +38,8 @@ internal static class Oauth
     public static async Task<OauthResponse> PostFormAsync(
         HttpClient client, string path, IEnumerable<KeyValuePair<string, string>> form, Action<HttpRequestMessage>? configure = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
-        {
-            Content = new FormUrlEncodedContent(form)
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative));
+        request.Content = new FormUrlEncodedContent(form);
         configure?.Invoke(request);
         using var response = await client.SendAsync(request).ConfigureAwait(false);
         return await OauthResponse.FromAsync(response).ConfigureAwait(false);

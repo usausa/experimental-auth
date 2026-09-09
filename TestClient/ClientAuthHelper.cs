@@ -79,37 +79,44 @@ internal static class ClientAuthHelper
             ["jti"] = Guid.NewGuid().ToString("N")
         };
 
-        switch (kty)
+        var alg = kty switch
         {
-            case "EC":
+            "EC" => "ES256",
+            "RSA" => "RS256",
+            _ => throw new InvalidOperationException($"Unsupported key type '{kty}' in private JWK.")
+        };
+
+        var signingInput = CreateSigningInput(alg, kid, payload);
+        var data = Encoding.ASCII.GetBytes(signingInput);
+        byte[] signature;
+        if (alg == "ES256")
+        {
+            using var ecdsa = ECDsa.Create(new ECParameters
             {
-                using var ecdsa = ECDsa.Create(new ECParameters
-                {
-                    Curve = ECCurve.NamedCurves.nistP256,
-                    Q = new ECPoint { X = Decode(jwk, "x"), Y = Decode(jwk, "y") },
-                    D = Decode(jwk, "d")
-                });
-                return Sign("ES256", kid, payload, data => ecdsa.SignData(data, HashAlgorithmName.SHA256));
-            }
-            case "RSA":
-            {
-                using var rsa = RSA.Create();
-                rsa.ImportParameters(new RSAParameters
-                {
-                    Modulus = Decode(jwk, "n"),
-                    Exponent = Decode(jwk, "e"),
-                    D = Decode(jwk, "d"),
-                    P = Decode(jwk, "p"),
-                    Q = Decode(jwk, "q"),
-                    DP = Decode(jwk, "dp"),
-                    DQ = Decode(jwk, "dq"),
-                    InverseQ = Decode(jwk, "qi")
-                });
-                return Sign("RS256", kid, payload, data => rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
-            }
-            default:
-                throw new InvalidOperationException($"Unsupported key type '{kty}' in private JWK.");
+                Curve = ECCurve.NamedCurves.nistP256,
+                Q = new ECPoint { X = Decode(jwk, "x"), Y = Decode(jwk, "y") },
+                D = Decode(jwk, "d")
+            });
+            signature = ecdsa.SignData(data, HashAlgorithmName.SHA256);
         }
+        else
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportParameters(new RSAParameters
+            {
+                Modulus = Decode(jwk, "n"),
+                Exponent = Decode(jwk, "e"),
+                D = Decode(jwk, "d"),
+                P = Decode(jwk, "p"),
+                Q = Decode(jwk, "q"),
+                DP = Decode(jwk, "dp"),
+                DQ = Decode(jwk, "dq"),
+                InverseQ = Decode(jwk, "qi")
+            });
+            signature = rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        }
+
+        return signingInput + "." + Base64Url.EncodeToString(signature);
     }
 
     // P-256 鍵ペアを生成し、登録用の公開 JWKS と秘密 JWK (JSON) を返す。
@@ -125,7 +132,8 @@ internal static class ClientAuthHelper
         return (publicJwks, privateJwk);
     }
 
-    private static string Sign(string alg, string? kid, Dictionary<string, object> payload, Func<byte[], byte[]> sign)
+    // JWT の署名対象 (base64url のヘッダー + "." + base64url のペイロード)
+    private static string CreateSigningInput(string alg, string? kid, Dictionary<string, object> payload)
     {
         var header = new Dictionary<string, object> { ["alg"] = alg, ["typ"] = "JWT" };
         if (!String.IsNullOrEmpty(kid))
@@ -133,10 +141,8 @@ internal static class ClientAuthHelper
             header["kid"] = kid;
         }
 
-        var signingInput = Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(header)) + "." +
-                           Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(payload));
-        var signature = sign(Encoding.ASCII.GetBytes(signingInput));
-        return signingInput + "." + Base64Url.EncodeToString(signature);
+        return Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(header)) + "." +
+               Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(payload));
     }
 
     private static byte[] Decode(JsonElement jwk, string name) =>
