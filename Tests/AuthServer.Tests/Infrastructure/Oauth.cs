@@ -21,6 +21,7 @@ internal static class Oauth
 
     public const string TokenPath = "/connect/token";
     public const string AuthorizePath = "/connect/authorize";
+    public const string DirectAuthorizePath = "/connect/authorize/direct";
     public const string UserInfoPath = "/connect/userinfo";
     public const string RevokePath = "/connect/revoke";
     public const string IntrospectPath = "/connect/introspect";
@@ -106,7 +107,7 @@ internal static class Oauth
             form[key] = value;
         }
 
-        return PostFormAsync(client, AuthorizePath, form);
+        return PostFormAsync(client, DirectAuthorizePath, form);
     }
 
     public static Task<OauthResponse> ExchangeCodeAsync(

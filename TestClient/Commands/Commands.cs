@@ -144,7 +144,7 @@ public sealed class TokenCommand : ICommandHandler
         var nonce = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        Console.WriteLine($"Requesting authorization code from {authBase.TrimEnd('/')}/connect/authorize ...");
+        Console.WriteLine($"Requesting authorization code from {authBase.TrimEnd('/')}/connect/authorize/direct ...");
         Console.WriteLine($"  client_id : {clientId}");
         Console.WriteLine($"  scope     : {scope}");
         Console.WriteLine($"  username  : {username}");
@@ -163,7 +163,7 @@ public sealed class TokenCommand : ICommandHandler
             ["password"] = password
         });
 
-        var authorizeResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/authorize", authorizeContent);
+        var authorizeResponse = await http.PostAsync($"{authBase.TrimEnd('/')}/connect/authorize/direct", authorizeContent);
         var authorizeBody = await authorizeResponse.Content.ReadAsStringAsync();
 
         if (!authorizeResponse.IsSuccessStatusCode)

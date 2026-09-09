@@ -167,8 +167,8 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-01 | メタデータ | OpenID Provider Configuration | `/.well-known/openid-configuration` | GET | **必須** | OIDC Discovery §4 | 1 | ✅ | サーバーメタデータ公開 |
 | E-02 | メタデータ | JWK Set | `/.well-known/jwks.json` | GET | **必須** | RFC 7517 | 1 | ✅ | 署名検証用公開鍵 |
 | E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行。クライアント認証は `client_secret_basic` / `client_secret_post` / `private_key_jwt`（RFC 7523）/ `none` で、登録済みの方式を強制（§6.3） |
-| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。GET は方式 A（セッション Cookie + リダイレクト、`response_mode` は `query` / `form_post`）。POST は現在 方式 B が占有しており、OIDC Core §3.1.2.1 が MUST とする「GET と同じ認可パラメーターを form-urlencoded で受けてリダイレクトする POST」に非対応（§6.3 / `TODO.md`） |
-| E-20 | 認可 | Direct Authorization (方式 B) | `/connect/authorize/direct` | POST | 任意（独自） | — | 2 | 🔲 | 方式 B の移設先。資格情報を直送し認可コードを JSON で返す。標準の POST 認可要求と衝突しないよう分離する（`TODO.md`） |
+| E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | ✅ | 方式 A。GET と POST（OIDC Core §3.1.2.1 が MUST とする form-urlencoded）で同じ認可パラメーターを受け取り、`response_mode` に従って `query` か `form_post` で応答する（§6.3） |
+| E-20 | 認可 | Direct Authorization (方式 B) | `/connect/authorize/direct` | POST | 任意（独自） | — | 2 | ✅ | 資格情報を直送し、認可コードを JSON で返す。標準の POST 認可要求（E-04）と衝突しないよう別パスに分離 |
 | E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET / POST | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。OIDC Core §5.3.1 に従い GET と POST の両方に対応。トークンは Authorization ヘッダーかフォームの `access_token` のどちらか一方で受け取り、両方で送られた場合は `invalid_request`（RFC 6750 §2） |
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
 | E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
@@ -388,14 +388,13 @@ SameSite=Lax（クライアントのサイトからのトップレベル遷移�
 #### 方式 B: API 専用方式（実装済み）
 
 AuthServer を純粋な API サーバーとして扱うため、ブラウザリダイレクトを行わず
-`POST /connect/authorize` でクライアントが `username` / `password` を直接送信し、
+`POST /connect/authorize/direct` でクライアントが `username` / `password` を直接送信し、
 認可コードを JSON レスポンスで受け取ります。
 
-> **パスの移設予定**: OIDC Core §3.1.2.1 は認可エンドポイントの POST を MUST としており、それは
-> 「GET と同じ認可パラメーターを form-urlencoded で受け、リダイレクトで応答する」ものです。現在は方式 B が
-> `POST /connect/authorize` を占有しているため、標準クライアントの POST 認可要求は `username` / `password` の
-> 欠落で弾かれます。方式 B は `/connect/authorize/direct`（E-20）へ移し、`POST /connect/authorize` は
-> 標準どおりの動作にする方針です（`TODO.md`）。
+> **パスについて**: OIDC Core §3.1.2.1 は認可エンドポイントの POST を MUST としており、それは
+> 「GET と同じ認可パラメーターを form-urlencoded で受け、リダイレクトで応答する」ものです。方式 B は
+> それとは意味が異なるため、2026-09-09 に `/connect/authorize/direct`（E-20）へ移設しました。
+> `POST /connect/authorize` は GET と同じ標準の認可要求として動作します。
 
 ```
 POST /connect/authorize

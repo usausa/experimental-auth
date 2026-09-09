@@ -344,6 +344,98 @@ public sealed class AuthorizeRedirectTests : IClassFixture<AuthServerFactory>
         Assert.Equal("login_required", Oauth.ParseRedirect(response.Header("Location"))["error"]);
     }
 
+    // OIDC Core §3.1.2.1: 認可エンドポイントは GET と POST の両方に対応する。
+    // POST は同じ認可パラメーターを form-urlencoded で受け取り、応答も GET と同じ。
+    [Fact]
+    public async Task PostAuthorizationRequestBehavesLikeGet()
+    {
+        using var client = factory.CreateBrowserClient();
+        var signIn = await Oauth.SignInAsync(client);
+        var (verifier, challenge) = Oauth.CreatePkce();
+        var nonce = Oauth.NewNonce();
+
+        var response = await Oauth.PostFormAsync(client, Oauth.AuthorizePath, Oauth.Form(
+            ("response_type", "code"),
+            ("client_id", "test-webapp"),
+            ("redirect_uri", RedirectTarget),
+            ("scope", "openid profile"),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
+            ("state", "st-post"),
+            ("nonce", nonce)));
+
+        Assert.Equal(HttpStatusCode.Found, response.Status);
+        var parameters = Oauth.ParseRedirect(response.Header("Location"));
+        Assert.Equal("st-post", parameters["state"]);
+
+        var tokens = await Oauth.ExchangeCodeAsync(client, parameters["code"], verifier);
+        Assert.Equal(HttpStatusCode.OK, tokens.Status);
+
+        var idToken = Oauth.JwtPayload(tokens.GetString("id_token")!);
+        Assert.Equal(nonce, idToken.GetProperty("nonce").GetString());
+        Assert.Equal(signIn.Property("auth_time").GetInt64(), idToken.GetProperty("auth_time").GetInt64());
+    }
+
+    [Fact]
+    public async Task PostAuthorizationRequestWithoutASessionReturnsLoginRequired()
+    {
+        using var client = factory.CreateBrowserClient();
+        var (_, challenge) = Oauth.CreatePkce();
+
+        var response = await Oauth.PostFormAsync(client, Oauth.AuthorizePath, Oauth.Form(
+            ("response_type", "code"),
+            ("client_id", "test-webapp"),
+            ("redirect_uri", RedirectTarget),
+            ("scope", "openid"),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
+            ("nonce", Oauth.NewNonce())));
+
+        Assert.Equal(HttpStatusCode.Found, response.Status);
+        Assert.Equal("login_required", Oauth.ParseRedirect(response.Header("Location"))["error"]);
+    }
+
+    [Fact]
+    public async Task PostAuthorizationRequestRequiresFormEncoding()
+    {
+        using var client = factory.CreateBrowserClient();
+        await Oauth.SignInAsync(client);
+
+        // Content-Type が付いていない場合はハンドラーに届くので、OAuth 形式のエラーを返す
+        var withoutContentType = await Oauth.SendAsync(client, HttpMethod.Post, Oauth.AuthorizePath);
+        Assert.Equal(HttpStatusCode.BadRequest, withoutContentType.Status);
+        Assert.Equal("invalid_request", withoutContentType.Error);
+
+        // form 以外の Content-Type は ASP.NET Core が Accepts メタデータに基づいて先に 400 で弾く。
+        // 本文が OAuth 形式の JSON にならない点は全フォームエンドポイント共通の課題として TODO にある。
+        var wrongContentType = await Oauth.SendAsync(client, HttpMethod.Post, Oauth.AuthorizePath, request =>
+            request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, wrongContentType.Status);
+    }
+
+    // 方式 B は標準の POST 認可要求と衝突しないよう別パスに置いている
+    [Fact]
+    public async Task DirectAuthorizeStillReturnsTheCodeAsJson()
+    {
+        using var client = factory.CreateBrowserClient();
+        var (_, challenge) = Oauth.CreatePkce();
+
+        var response = await Oauth.PostFormAsync(client, Oauth.DirectAuthorizePath, Oauth.Form(
+            ("response_type", "code"),
+            ("client_id", "test-webapp"),
+            ("redirect_uri", RedirectTarget),
+            ("scope", "openid"),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
+            ("nonce", Oauth.NewNonce()),
+            ("username", "alice"),
+            ("password", "password")));
+
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        Assert.False(String.IsNullOrEmpty(response.GetString("code")));
+        Assert.Null(response.Header("Location"));
+    }
+
     [Fact]
     public async Task DiscoveryAdvertisesTheSupportedResponseModes()
     {

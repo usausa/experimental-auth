@@ -61,9 +61,10 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
       Discovery と JWKS は公開メタデータなので対象外
 - [x] OIDC Core §5.3.1 の UserInfo POST（MUST、2026-09-09）。Authorization ヘッダーとフォームの `access_token` の両方に対応し、
       両方で送られた場合は `invalid_request`（RFC 6750 §2）
-- [ ] OIDC Core §3.1.2.1 の POST 認可要求（MUST）。`POST /connect/authorize` を GET と同じセマンティクス（form-urlencoded の
-      認可パラメーターを受けてリダイレクト）にし、方式 B は `/connect/authorize/direct`（`SPEC.md` E-20）へ移す。
-      TestClient・結合テスト・SPEC / README の追随が必要
+- [x] OIDC Core §3.1.2.1 の POST 認可要求（MUST、2026-09-09）。`POST /connect/authorize` は GET と同じ認可パラメーターを
+      form-urlencoded で受け取り、同じ応答を返す。方式 B は `/connect/authorize/direct`（`SPEC.md` E-20）へ移設した
+- [ ] フォーム系エンドポイントの Content-Type 不一致エラーが OAuth 形式でない。`Accepts` メタデータに基づいて ASP.NET Core が
+      先に 400 とプレーンテキストを返すため、`{"error":"invalid_request"}` にならない（Content-Type 無しの場合はハンドラーに届くので OAuth 形式）
 - [x] RFC 6749 §6 のリフレッシュ時スコープ縮小（2026-09-09）。`scope` を指定した場合は元の付与範囲のサブセットであることを検証し、
       範囲外は `invalid_scope`。省略時は元の範囲をそのまま使う。リフレッシュトークン自体は元の付与範囲を保持するため、
       次回以降また広げられる（audience と同じ扱い）
@@ -307,8 +308,8 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 冒頭の「マイルストーン計画」を参照してください。M2 / M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）/ M2''（HTTPS / レート制限 / CORS / 自動テスト）は完了し、次は M3（🌐 方式 A）です。
 🌐 なしで残る候補は ACR / AMR のモデル化、🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛です。
-「仕様と実装の乖離」に挙げた MUST のうち、キャッシュ制御・UserInfo の POST・リフレッシュ時のスコープ縮小は 2026-09-09 に対応しました。
-残る POST 認可要求（方式 B の移設）も M3b より先に片付けます。
+「仕様と実装の乖離」に挙げた MUST 4 件（キャッシュ制御、UserInfo の POST、POST 認可要求と方式 B の移設、リフレッシュ時のスコープ縮小）は
+2026-09-09 にすべて対応しました。次はセキュリティヘッダーを、ログイン画面と同意画面を作る前に入れます。
 
 ---
 

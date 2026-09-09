@@ -12,13 +12,17 @@ using Microsoft.Extensions.Options;
 
 // Authorization Endpoint (RFC 6749 §3.1 / §4.1 / RFC 7636 PKCE / OIDC Core §3.1.2)
 //
-//   GET  /connect/authorize … 方式 A。セッション Cookie で利用者を判断し、redirect_uri へリダイレクトで認可コードを返す
-//   POST /connect/authorize … 方式 B。クライアントが資格情報を直送し、認可コードを JSON で受け取る (API 専用)
+//   GET  /connect/authorize        … 方式 A。セッション Cookie で利用者を判断し、redirect_uri へリダイレクトで認可コードを返す
+//   POST /connect/authorize        … 方式 A の POST 版。OIDC Core §3.1.2.1 が MUST とする形式で、応答は GET と同じ
+//   POST /connect/authorize/direct … 方式 B。クライアントが資格情報を直送し、認可コードを JSON で受け取る (API 専用)
 //
 // 方式 A のセッションは /account/session が発行する。ログイン画面は未実装のため、セッションがない要求には
 // ログイン画面へ誘導する代わりに login_required を返す (prompt=none と同じ扱い)。
 public static class AuthorizeEndpoint
 {
+    // 方式 B の移設先。標準の POST 認可要求 (OIDC Core §3.1.2.1) と同じパスに置けないため分離している
+    public const string DirectPath = "/connect/authorize/direct";
+
     private const int MaxNonceLength = 512;
 
     public static void MapAuthorizeEndpoint(this WebApplication app)
@@ -39,8 +43,23 @@ public static class AuthorizeEndpoint
         app.MapPost("/connect/authorize", HandleAuthorizePost)
             .DisableAntiforgery()
             .WithTags("Authorization")
+            .WithSummary("認可要求 (方式 A: POST)")
+            .WithDescription("GET と同じ認可パラメーターを application/x-www-form-urlencoded で受け取ります(OIDC Core §3.1.2.1 が MUST とする形式)。応答は GET と同じくリダイレクトまたは form_post です。")
+            .Accepts<IFormCollection>("application/x-www-form-urlencoded")
+            .Produces(StatusCodes.Status302Found)
+            .Produces<string>(StatusCodes.Status200OK, "text/html")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .RequireCors(Security.CorsExtensions.ApiPolicy)
+            .RequireRateLimiting(Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
+            .AllowAnonymous();
+
+        app.MapPost(DirectPath, HandleDirectAuthorize)
+            .DisableAntiforgery()
+            .WithTags("Authorization")
             .WithSummary("認可コードの発行 (方式 B: API 専用)")
-            .WithDescription("ユーザー認証情報を受け取り、認可コードを発行します(RFC 6749 §4.1 / RFC 7636 PKCE)。ブラウザリダイレクトではなく JSON で認可コードを返します。")
+            .WithDescription("ユーザー認証情報を受け取り、認可コードを JSON で返します(RFC 6749 §4.1 / RFC 7636 PKCE)。標準の POST 認可要求と衝突しないよう別パスにしています。")
             .Accepts<IFormCollection>("application/x-www-form-urlencoded")
             .Produces<object>(StatusCodes.Status200OK, "application/json")
             .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -51,13 +70,8 @@ public static class AuthorizeEndpoint
             .AllowAnonymous();
     }
 
-    //--------------------------------------------------------------------------------
-    // 方式 A: GET /connect/authorize
-    // client_id と redirect_uri が確定するまではリダイレクトしてはならない (RFC 6749 §4.1.2.1)。
-    // それ以降のエラーは redirect_uri にエラーパラメーターを載せて返す。
-    //--------------------------------------------------------------------------------
-
-    private static async ValueTask<IResult> HandleAuthorizeGet(
+    // GET と POST は認可パラメーターの受け取り方だけが違う。応答はどちらも同じ (リダイレクト / form_post)。
+    private static ValueTask<IResult> HandleAuthorizeGet(
         HttpContext context,
         ClientService clientService,
         UserService userService,
@@ -67,8 +81,48 @@ public static class AuthorizeEndpoint
         IOptions<AuthServerOptions> options)
     {
         var query = context.Request.Query;
-        var clientId = query["client_id"].ToString();
-        var redirectUri = query["redirect_uri"].ToString();
+        return HandleAuthorizationRequestAsync(
+            context, key => query[key].ToString(), clientService, userService, codeService, replayGuard, auditLog, options);
+    }
+
+    // OIDC Core §3.1.2.1 は認可エンドポイントの POST を MUST としており、本体は application/x-www-form-urlencoded で送る。
+    private static async ValueTask<IResult> HandleAuthorizePost(
+        HttpContext context,
+        ClientService clientService,
+        UserService userService,
+        AuthorizationCodeService codeService,
+        ReplayGuardService replayGuard,
+        AuditLogService auditLog,
+        IOptions<AuthServerOptions> options)
+    {
+        if (!context.Request.HasFormContentType)
+        {
+            return Error("invalid_request", "The POST authorization request must be application/x-www-form-urlencoded");
+        }
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        return await HandleAuthorizationRequestAsync(
+            context, key => form[key].ToString(), clientService, userService, codeService, replayGuard, auditLog, options);
+    }
+
+    //--------------------------------------------------------------------------------
+    // 方式 A: GET / POST /connect/authorize
+    // client_id と redirect_uri が確定するまではリダイレクトしてはならない (RFC 6749 §4.1.2.1)。
+    // それ以降のエラーは redirect_uri にエラーパラメーターを載せて返す。
+    //--------------------------------------------------------------------------------
+
+    private static async ValueTask<IResult> HandleAuthorizationRequestAsync(
+        HttpContext context,
+        Func<string, string> parameter,
+        ClientService clientService,
+        UserService userService,
+        AuthorizationCodeService codeService,
+        ReplayGuardService replayGuard,
+        AuditLogService auditLog,
+        IOptions<AuthServerOptions> options)
+    {
+        var clientId = parameter("client_id");
+        var redirectUri = parameter("redirect_uri");
 
         // --- リダイレクトしてはいけない段階 ---
         if (String.IsNullOrEmpty(clientId))
@@ -93,8 +147,8 @@ public static class AuthorizeEndpoint
         }
 
         // --- ここから先は redirect_uri へエラーを返す ---
-        var state = NullIfEmpty(query["state"].ToString());
-        var responseMode = query["response_mode"].ToString();
+        var state = NullIfEmpty(parameter("state"));
+        var responseMode = parameter("response_mode");
         if (String.IsNullOrEmpty(responseMode))
         {
             responseMode = AuthorizeResponse.Query;
@@ -111,26 +165,26 @@ public static class AuthorizeEndpoint
             return Deny("unauthorized_client", "Client is not allowed to use authorization_code grant");
         }
 
-        if (!String.Equals(query["response_type"].ToString(), "code", StringComparison.Ordinal))
+        if (!String.Equals(parameter("response_type"), "code", StringComparison.Ordinal))
         {
             return Deny("unsupported_response_type", "Only 'code' response_type is supported");
         }
 
-        var codeChallenge = query["code_challenge"].ToString();
-        var codeChallengeMethod = query["code_challenge_method"].ToString();
+        var codeChallenge = parameter("code_challenge");
+        var codeChallengeMethod = parameter("code_challenge_method");
         var pkceError = ValidatePkce(codeChallenge, codeChallengeMethod);
         if (pkceError is not null)
         {
             return Deny("invalid_request", pkceError);
         }
 
-        var scopeResult = ResolveScopes(client, query["scope"].ToString());
+        var scopeResult = ResolveScopes(client, parameter("scope"));
         if (scopeResult.Error is not null)
         {
             return Deny("invalid_scope", scopeResult.Error);
         }
 
-        var nonce = NullIfEmpty(query["nonce"].ToString());
+        var nonce = NullIfEmpty(parameter("nonce"));
         var nonceError = ValidateNonce(nonce, scopeResult.IncludesOpenId, options.Value.RequireNonce);
         if (nonceError is not null)
         {
@@ -138,7 +192,7 @@ public static class AuthorizeEndpoint
         }
 
         // prompt (OIDC Core §3.1.2.1)。none は他の値と併用できない
-        var prompts = query["prompt"].ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var prompts = parameter("prompt").Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (Array.Exists(prompts, p => p == "none") && (prompts.Length > 1))
         {
             return Deny("invalid_request", "prompt=none must not be combined with other values");
@@ -166,7 +220,7 @@ public static class AuthorizeEndpoint
         }
 
         // max_age: 前回認証からの経過が長すぎる場合は再認証が要る (OIDC Core §3.1.2.1)
-        if (Int32.TryParse(query["max_age"].ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxAge) &&
+        if (Int32.TryParse(parameter("max_age"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxAge) &&
             (maxAge >= 0) &&
             ((DateTime.UtcNow - session.AuthTime).TotalSeconds > maxAge))
         {
@@ -209,12 +263,12 @@ public static class AuthorizeEndpoint
     }
 
     //--------------------------------------------------------------------------------
-    // 方式 B: POST /connect/authorize
+    // 方式 B: POST /connect/authorize/direct
     // クライアントがユーザー資格情報と PKCE パラメーターを POST し、認可コードを JSON で受け取る。
     // ブラウザリダイレクトもサーバー側セッションも使わないため、API だけで完結する。
     //--------------------------------------------------------------------------------
 
-    private static async ValueTask<IResult> HandleAuthorizePost(
+    private static async ValueTask<IResult> HandleDirectAuthorize(
         HttpContext context,
         ClientService clientService,
         UserService userService,

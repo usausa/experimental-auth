@@ -58,7 +58,7 @@ dotnet run -- <command> [options]
 #### ユースケース 1: ユーザー認証(authorization_code + PKCE)
 
 API クライアントがユーザー資格情報を直接送信して認可コードを取得し、アクセストークン・ID Token・リフレッシュトークンを受け取るフローです。  
-AuthServer は **API 専用サーバー**のため、ブラウザリダイレクトは行いません。認可コードは `POST /connect/authorize` の JSON レスポンスとして返されます。
+このコマンドは方式 B を使います。ブラウザリダイレクトを行わず、認可コードは `POST /connect/authorize/direct` の JSON レスポンスとして返されます。
 
 ```bash
 # 1. authorization_code + PKCE でトークンを取得(認可コード取得とトークン交換を自動実行)
@@ -330,7 +330,8 @@ dotnet test AuthServer.slnx
 | `/.well-known/jwks.json` | GET | ✅ 実装済み | 1 | JWT 署名検証用の公開鍵セット (JWKS) を返す |
 | `/connect/token` | POST | ✅ 実装済み | 1〜2 | アクセストークン・ID Token・リフレッシュトークンを発行する(`client_credentials` / `authorization_code` / `refresh_token` / `device_code` グラント。クライアント認証は `client_secret_post` / `client_secret_basic` / `private_key_jwt` / `none` で、登録済みの方式を強制) |
 | `/connect/authorize` | GET | ✅ 実装済み | 2 | 方式 A。セッション Cookie で利用者を判断し、`redirect_uri` へ認可コードを返す(`response_mode` は `query` / `form_post`) |
-| `/connect/authorize` | POST | ✅ 実装済み | 2 | 方式 B。ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
+| `/connect/authorize` | POST | ✅ 実装済み | 2 | 方式 A の POST 版。GET と同じ認可パラメーターを form-urlencoded で受け取る(OIDC Core §3.1.2.1) |
+| `/connect/authorize/direct` | POST | ✅ 実装済み | 2 | 方式 B。ユーザー認証情報を受け取り認可コードを発行する(PKCE 対応・API 専用 JSON レスポンス) |
 | `/account/session` | POST/GET/DELETE | ✅ 実装済み | 2 | エンドユーザーのログインセッション。POST でログインして Cookie を発行、DELETE で破棄 |
 | `/connect/userinfo` | GET | ✅ 実装済み | 2 | Bearer トークンを持つユーザーのクレームを返す(OIDC UserInfo エンドポイント) |
 | `/connect/revoke` | POST | ✅ 実装済み | 4 | アクセストークンまたはリフレッシュトークンを失効させる(RFC 7009) |
@@ -342,10 +343,11 @@ dotnet test AuthServer.slnx
 | `/audit-logs` | Blazor | ✅ 実装済み | — | 🖥️ 監査ログの確認画面(認証失敗・トークン発行 / 拒否・リプレイ検出・管理操作など) |
 | `/connect/register` | POST | 🔲 未実装 | 5 | Dynamic Client Registration(RFC 7591) |
 
-> **`/connect/authorize` の 2 つの方式について**
-> GET は標準のブラウザリダイレクト方式(方式 A)で、セッション Cookie を見て `redirect_uri` へ認可コードを返します。
-> POST は API 専用方式(方式 B)で、クライアントが `username` / `password` を直接送信します。方式 B は
-> ユーザーのパスワードがクライアントを経由するため、信頼モデルとしては ROPC 相当です。
+> **2 つの方式について**
+> `/connect/authorize` は標準のリダイレクト方式(方式 A)で、GET と POST のどちらでも同じ認可パラメーターを受け取り、
+> セッション Cookie を見て `redirect_uri` へ認可コードを返します。
+> `/connect/authorize/direct` は API 専用方式(方式 B)で、クライアントが `username` / `password` を直接送信し
+> JSON で認可コードを受け取ります。方式 B はユーザーのパスワードがクライアントを経由するため、信頼モデルとしては ROPC 相当です。
 > ログイン画面は未実装なので、方式 A のセッションは `/account/session` で確立します。
 > 詳細は `SPEC.md` §6.3 を参照してください。
 
