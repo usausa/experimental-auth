@@ -1,5 +1,6 @@
 namespace AuthServer.Endpoints;
 
+using AuthServer.Security;
 using AuthServer.Services;
 
 // Token Revocation Endpoint (RFC 7009)
@@ -21,6 +22,7 @@ public static class RevocationEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 
@@ -43,6 +45,7 @@ public static class RevocationEndpoint
         var auth = await clientAuthenticator.AuthenticateAsync(context, form);
         if (auth.Client is null)
         {
+            ClientAuthenticator.ApplyAuthenticateChallenge(context);
             return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 

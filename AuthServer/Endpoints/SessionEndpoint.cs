@@ -25,6 +25,7 @@ public static class SessionEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(Security.RateLimitingExtensions.AuthenticationPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
 
         app.MapGet(Path, HandleQuery)
@@ -35,6 +36,7 @@ public static class SessionEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
 
         app.MapDelete(Path, HandleSignOut)
@@ -44,6 +46,7 @@ public static class SessionEndpoint
             .Produces(StatusCodes.Status204NoContent)
             .RequireCors(Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 

@@ -1,6 +1,7 @@
 namespace AuthServer.Endpoints;
 
 using AuthServer.Models;
+using AuthServer.Security;
 using AuthServer.Services;
 
 using Microsoft.Extensions.Options;
@@ -24,6 +25,7 @@ public static class IntrospectionEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 
@@ -45,6 +47,7 @@ public static class IntrospectionEndpoint
         var auth = await clientAuthenticator.AuthenticateAsync(context, form);
         if (auth.Client is null)
         {
+            ClientAuthenticator.ApplyAuthenticateChallenge(context);
             return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 

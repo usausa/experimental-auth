@@ -1,6 +1,7 @@
 namespace AuthServer.Endpoints;
 
 using AuthServer.Models;
+using AuthServer.Security;
 using AuthServer.Services;
 
 public static class TokenEndpoint
@@ -18,6 +19,7 @@ public static class TokenEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 
@@ -58,6 +60,7 @@ public static class TokenEndpoint
         var auth = await clientAuthenticator.AuthenticateAsync(context, form);
         if (auth.Client is null)
         {
+            ClientAuthenticator.ApplyAuthenticateChallenge(context);
             return Error("invalid_client", auth.ErrorDescription ?? "Client authentication failed", StatusCodes.Status401Unauthorized);
         }
 
@@ -291,10 +294,28 @@ public static class TokenEndpoint
             return await audit.DenyAsync(audiences.ErrorCode, audiences.ErrorDescription!);
         }
 
-        var customClaims = await customClaimService.ResolveForUserAsync(
-            user.UserId, info.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        // RFC 6749 §6: scope を指定する場合は元の付与範囲のサブセットでなければならない。省略時は元の範囲をそのまま使う。
+        // リフレッシュトークン自体は元の付与範囲を保持するため、次回以降また広げられる (audience と同じ扱い)。
+        var grantedScopes = info.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var requestedScope = form["scope"].ToString();
+        if (!String.IsNullOrEmpty(requestedScope))
+        {
+            var requestedScopes = requestedScope.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var scope in requestedScopes)
+            {
+                if (Array.IndexOf(grantedScopes, scope) < 0)
+                {
+                    return await audit.DenyAsync("invalid_scope", $"Scope '{scope}' is outside the original grant");
+                }
+            }
+
+            grantedScopes = requestedScopes;
+        }
+
+        var effectiveScope = String.Join(' ', grantedScopes);
+        var customClaims = await customClaimService.ResolveForUserAsync(user.UserId, grantedScopes);
         var accessTokenResult = tokenService.IssueAuthorizationCodeToken(
-            client.ClientId, user.UserId, user.Username, info.Scopes, audiences.Values, customClaims.AccessToken);
+            client.ClientId, user.UserId, user.Username, effectiveScope, audiences.Values, customClaims.AccessToken);
 
         await audit.IssuedAsync(user.UserId, accessTokenResult.Scope, audiences.Values, idToken: false, refreshToken: true);
 

@@ -1,10 +1,12 @@
 namespace AuthServer.Endpoints;
 
+using AuthServer.Security;
 using AuthServer.Services;
 
 // UserInfo Endpoint (OIDC Core 1.0 §5.3)
-// GET /connect/userinfo
-// アクセストークン(Bearer)に紐づくユーザーのクレームを返す。
+// GET / POST /connect/userinfo
+// アクセストークンに紐づくユーザーのクレームを返す。OIDC Core §5.3.1 は GET と POST の両対応を MUST としており、
+// POST では Authorization ヘッダーの代わりにフォームの access_token でもトークンを受け取る。
 public static class UserInfoEndpoint
 {
     public static void MapUserInfoEndpoint(this WebApplication app)
@@ -17,6 +19,21 @@ public static class UserInfoEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
+            .AllowAnonymous();
+
+        app.MapPost("/connect/userinfo", HandleUserInfo)
+            .DisableAntiforgery()
+            .WithTags("UserInfo")
+            .WithSummary("ユーザー情報の取得 (POST)")
+            .WithDescription("OIDC Core 1.0 §5.3.1 が MUST とする POST 版です。Authorization ヘッダーのほか、フォームの access_token でもトークンを受け取ります。")
+            .Accepts<IFormCollection>("application/x-www-form-urlencoded")
+            .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
+            .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 
@@ -34,17 +51,13 @@ public static class UserInfoEndpoint
         UserService userService,
         CustomClaimService customClaimService)
     {
-        var authHeader = context.Request.Headers.Authorization.ToString();
-        if (String.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        var (resolvedToken, resolveError) = await ResolveAccessTokenAsync(context);
+        if (resolveError is not null)
         {
-            return Unauthorized("Bearer token required");
+            return resolveError;
         }
 
-        var accessToken = authHeader["Bearer ".Length..].Trim();
-        if (String.IsNullOrEmpty(accessToken))
-        {
-            return Unauthorized("Bearer token is empty");
-        }
+        var accessToken = resolvedToken!;
 
         // JWT 検証 (署名・発行者・有効期限・typ=at+jwt) と失効リストの照合
         var claims = await tokenService.ValidateAccessTokenAsync(accessToken);
@@ -111,6 +124,43 @@ public static class UserInfoEndpoint
 
         return Results.Json(response);
     }
+
+    // アクセストークンの受け取り口は Authorization ヘッダーかフォームの access_token のどちらか一方。
+    // 両方で送るのは RFC 6750 §2 が禁じているため invalid_request で拒否する。
+    private static async ValueTask<(string? Token, IResult? Error)> ResolveAccessTokenAsync(HttpContext context)
+    {
+        string? fromHeader = null;
+        var authHeader = context.Request.Headers.Authorization.ToString();
+        if (!String.IsNullOrEmpty(authHeader))
+        {
+            if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return (null, Unauthorized("Bearer token required"));
+            }
+
+            fromHeader = authHeader["Bearer ".Length..].Trim();
+        }
+
+        string? fromForm = null;
+        if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            fromForm = form["access_token"].ToString();
+        }
+
+        if (!String.IsNullOrEmpty(fromHeader) && !String.IsNullOrEmpty(fromForm))
+        {
+            return (null, BadRequest("invalid_request", "The access token must be sent in only one place"));
+        }
+
+        var token = String.IsNullOrEmpty(fromHeader) ? fromForm : fromHeader;
+        return String.IsNullOrEmpty(token)
+            ? (null, Unauthorized("Bearer token required"))
+            : (token, null);
+    }
+
+    private static IResult BadRequest(string code, string description) =>
+        Results.Json(new { error = code, error_description = description }, statusCode: StatusCodes.Status400BadRequest);
 
     private static IResult Unauthorized(string description) =>
         Results.Json(

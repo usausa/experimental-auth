@@ -33,6 +33,7 @@ public static class AuthorizeEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(Security.RateLimitingExtensions.TokenPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
 
         app.MapPost("/connect/authorize", HandleAuthorizePost)
@@ -46,6 +47,7 @@ public static class AuthorizeEndpoint
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .RequireCors(Security.CorsExtensions.ApiPolicy)
             .RequireRateLimiting(Security.RateLimitingExtensions.AuthenticationPolicy)
+            .RequireNoStore()
             .AllowAnonymous();
     }
 

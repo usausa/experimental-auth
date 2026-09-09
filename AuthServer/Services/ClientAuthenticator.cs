@@ -32,6 +32,15 @@ public sealed class ClientAuthenticator(
 
     private readonly AuthServerOptions options = options.Value;
 
+    // RFC 9110 §15.5.2 は 401 応答に WWW-Authenticate を MUST としており、RFC 6749 §5.2 も
+    // Authorization ヘッダーで認証を試みたクライアントには challenge を返すよう求めている。
+    // クライアント認証を行うエンドポイントが 401 を返す直前に呼ぶ。
+    public static void ApplyAuthenticateChallenge(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Response.Headers.WWWAuthenticate = $"Basic realm=\"{context.Request.Path}\"";
+    }
+
     public Task<ClientAuthenticationResult> AuthenticateAsync(HttpContext context, IFormCollection form)
     {
         ArgumentNullException.ThrowIfNull(context);

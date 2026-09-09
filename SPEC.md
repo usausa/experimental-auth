@@ -169,7 +169,7 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 | E-03 | トークン | Token Endpoint | `/connect/token` | POST | **必須** | RFC 6749 §3.2 | 1 | ✅ | トークン発行。クライアント認証は `client_secret_basic` / `client_secret_post` / `private_key_jwt`（RFC 7523）/ `none` で、登録済みの方式を強制（§6.3） |
 | E-04 | 認可 | Authorization Endpoint | `/connect/authorize` | GET / POST | **必須** | RFC 6749 §3.1, OIDC Core §3.1.2 | 2 | 🟡 | 認可コード発行。GET は方式 A（セッション Cookie + リダイレクト、`response_mode` は `query` / `form_post`）。POST は現在 方式 B が占有しており、OIDC Core §3.1.2.1 が MUST とする「GET と同じ認可パラメーターを form-urlencoded で受けてリダイレクトする POST」に非対応（§6.3 / `TODO.md`） |
 | E-20 | 認可 | Direct Authorization (方式 B) | `/connect/authorize/direct` | POST | 任意（独自） | — | 2 | 🔲 | 方式 B の移設先。資格情報を直送し認可コードを JSON で返す。標準の POST 認可要求と衝突しないよう分離する（`TODO.md`） |
-| E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET | **必須**(OIDC) | OIDC Core §5.3 | 3 | 🟡 | ユーザークレーム返却。OIDC Core §5.3.1 は GET と POST の両対応を MUST としているが、POST とフォームボディの `access_token` は未実装（`TODO.md`） |
+| E-05 | ユーザー情報 | UserInfo Endpoint | `/connect/userinfo` | GET / POST | **必須**(OIDC) | OIDC Core §5.3 | 3 | ✅ | ユーザークレーム返却。OIDC Core §5.3.1 に従い GET と POST の両方に対応。トークンは Authorization ヘッダーかフォームの `access_token` のどちらか一方で受け取り、両方で送られた場合は `invalid_request`（RFC 6750 §2） |
 | E-06 | トークン管理 | Token Revocation | `/connect/revoke` | POST | 任意(推奨) | RFC 7009 | 4 | ✅ | トークン失効。RT は `is_revoked`、AT は JTI を失効リストへ。ResourceServer は失効を参照しない（§6.5 方式 3） |
 | E-07 | トークン管理 | Token Introspection | `/connect/introspect` | POST | 任意(推奨) | RFC 7662 | 4 | ✅ | トークン検査。認証済みクライアントは任意のトークンを検査可能 |
 | E-08 | セッション | End Session (Logout) | `/connect/logout` | GET | 任意 | OIDC RP-Logout §2 | 4 | 🔲 | ログアウト |
@@ -197,7 +197,7 @@ Git Bash の curl は Windows の証明書ストアを見ないため、手動�
 |---|-----------|----------|---------|-------|------|------|
 | G-01 | `client_credentials` | **必須** | RFC 6749 §4.4 | 1 | ✅ | サーバー間認証 |
 | G-02 | `authorization_code` | **必須** | RFC 6749 §4.1, RFC 7636 | 2 | ✅ | 認可コード交換（PKCE必須） |
-| G-03 | `refresh_token` | **必須**(推奨) | RFC 6749 §6 | 2 | ✅ | トークンリフレッシュ（ローテーションあり） |
+| G-03 | `refresh_token` | **必須**(推奨) | RFC 6749 §6 | 2 | ✅ | トークンリフレッシュ（ローテーションあり）。`scope` を指定する場合は元の付与範囲のサブセットに限る。リフレッシュトークンは元の範囲を保持するため、次回以降また広げられる |
 | G-04 | `urn:ietf:params:oauth:grant-type:device_code` | 任意 | RFC 8628 §3.4 | 5 | ✅ | デバイスフロー。`authorization_pending` / `slow_down` / `access_denied` / `expired_token` を返しつつポーリングを受ける |
 | G-05 | `password` (ROPC) | 非推奨 | RFC 6749 §4.3 | — | 🔲 | セキュリティ上非推奨。grant_type としては実装しない（ただし現行の E-04 は資格情報を直接受け取るため、実質的に ROPC 相当の性質を持つ。§6.3 参照） |
 
@@ -924,7 +924,8 @@ https://client.example.com/callback
 | SEC-11 | クライアント認証方式の強制 | Token / Revocation / Introspection / Device | ✅ | 登録済み `token_endpoint_auth_method` 以外での認証を拒否。`private_key_jwt` は署名・`iss` / `sub` / `aud` / `exp`・寿命上限・`jti` の一回性を検証（§6.3） |
 | SEC-12 | リプレイ検出 | client_assertion / nonce / 認可コード / RT | ✅ | `replay_guard`（`jti`、`nonce`）とファミリー失効（認可コード・RT）。検出時は監査ログ `replay_detected` に記録 |
 | SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5）。どのクライアント認証方式が使われたかは未記録（`TODO.md`） |
-| SEC-14 | トークン応答のキャッシュ禁止 | Token / Introspection / UserInfo / Authorize / Session | 🔲 | RFC 6749 §5.1 の MUST。トークン・資格情報を含む応答に `Cache-Control: no-store` と `Pragma: no-cache` を付ける。現在は JWKS の `max-age` のみで未実装（`TODO.md`） |
+| SEC-14 | トークン応答のキャッシュ禁止 | Token / Authorize / UserInfo / Revocation / Introspection / Device / Session | ✅ | RFC 6749 §5.1 の MUST。`Security/NoStoreExtensions.cs` のエンドポイントフィルターが `Cache-Control: no-store` と `Pragma: no-cache` を付与。Discovery と JWKS は公開メタデータなので対象外（JWKS は `max-age` で再取得を制御） |
+| SEC-16 | 401 応答の認証チャレンジ | Token / Revocation / Introspection / Device | ✅ | RFC 9110 §15.5.2 の MUST。RFC 6749 §5.2 と RFC 7662 §2.1 も要求する。クライアント認証に失敗した 401 に `WWW-Authenticate: Basic realm="<path>"` を添える |
 | SEC-15 | セキュリティヘッダー | Blazor 画面 / 全エンドポイント | 🔲 | CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy`・`Permissions-Policy`。現在は `UseHsts` のみ。同意画面は上被せクリックジャッキングの標的になるため `X-Frame-Options: DENY` と no-store が要る。`form_post` でクライアントへ POST する構成では CSP の `form-action` に IdP ホストの許可が必要（`TODO.md`） |
 
 認可コード・リフレッシュトークンはいずれも SHA-256 ハッシュ（小文字 16 進）で保存し、

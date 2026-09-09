@@ -5,8 +5,9 @@
 
 凡例:
 
-- 🌐 = **ブラウザリダイレクト（方式 A / M3）が前提**。リダイレクトフローとサーバー側セッションがないと成立しない
-- 🖥️ = エンドユーザー向けのブラウザ画面は必要だが、リダイレクトフロー・セッションは不要（API-only のマイルストーンでも実装できる）
+- 🌐 = **M3b の画面（ログイン / 同意 / ログアウト確認）が前提**。方式 A のリダイレクトとセッションは M3a で実装済みなので、
+  これらの画面がないと成立しない項目にだけ付けます（2026-09-09 に定義を見直し。以前は「リダイレクトフローが前提」の意味でした）
+- 🖥️ = エンドユーザー向けまたは管理者向けのブラウザ画面が必要（リダイレクトフローには依存しない）
 
 *最終更新: 2026-09-09*
 
@@ -55,14 +56,17 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 - [x] レート制限（`SPEC.md` SEC-09）。クライアント IP ごとの固定ウィンドウ。`/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、
       トークン系は `TokenPermitLimit`（既定 60/分）。超過は 429 + `Retry-After`。Blazor の承認画面（SignalR）は対象外（2026-09-09）
 - [x] CORS（`SPEC.md` SEC-10）。`Cors:AllowedOrigins` のオリジンだけにプロトコルエンドポイントを許可し、Discovery / JWKS は任意オリジンの GET を許可（2026-09-09）
-- [ ] RFC 6749 §5.1 のキャッシュ制御（`SPEC.md` SEC-14）。トークン・資格情報を含む応答に `Cache-Control: no-store` と `Pragma: no-cache` を付ける（MUST）。
-      対象は `/connect/token`・`/connect/introspect`・`/connect/userinfo`・方式 B の認可応答・`/account/session`。現在は JWKS の `max-age` のみ
-- [ ] OIDC Core §5.3.1 の UserInfo POST（MUST）。現在 GET のみで、POST とフォームボディの `access_token` に非対応
-- [ ] 🌐 OIDC Core §3.1.2.1 の POST 認可要求（MUST）。`POST /connect/authorize` を GET と同じセマンティクス（form-urlencoded の
+- [x] RFC 6749 §5.1 のキャッシュ制御（`SPEC.md` SEC-14、2026-09-09）。`Security/NoStoreExtensions.cs` のエンドポイントフィルターで
+      `Cache-Control: no-store` と `Pragma: no-cache` を付与。対象はトークン・認可（GET / POST）・UserInfo・失効・検査・デバイス認可・セッション。
+      Discovery と JWKS は公開メタデータなので対象外
+- [x] OIDC Core §5.3.1 の UserInfo POST（MUST、2026-09-09）。Authorization ヘッダーとフォームの `access_token` の両方に対応し、
+      両方で送られた場合は `invalid_request`（RFC 6750 §2）
+- [ ] OIDC Core §3.1.2.1 の POST 認可要求（MUST）。`POST /connect/authorize` を GET と同じセマンティクス（form-urlencoded の
       認可パラメーターを受けてリダイレクト）にし、方式 B は `/connect/authorize/direct`（`SPEC.md` E-20）へ移す。
       TestClient・結合テスト・SPEC / README の追随が必要
-- [ ] RFC 6749 §6 のリフレッシュ時スコープ縮小。現在 `scope` パラメーターを読んでおらず、狭いスコープを要求しても元の全スコープが返る。
-      元の付与範囲のサブセットであることの検証も無い
+- [x] RFC 6749 §6 のリフレッシュ時スコープ縮小（2026-09-09）。`scope` を指定した場合は元の付与範囲のサブセットであることを検証し、
+      範囲外は `invalid_scope`。省略時は元の範囲をそのまま使う。リフレッシュトークン自体は元の付与範囲を保持するため、
+      次回以降また広げられる（audience と同じ扱い）
 - [x] `redirect_uri` のスキーム検証（`javascript:` / `data:` を弾き、`http` / `https` の絶対 URI でフラグメントなしを要求）。
       認可エンドポイントの脆弱実装対策として追加（`SPEC.md` SEC-05、2026-09-09）
 - [x] 自動テスト。`Tests/AuthServer.Tests`（xUnit + WebApplicationFactory、一時 SQLite、seed 有効）と `Tests/ResourceServer.Tests`（AuthServer の TestServer を JWKS の取得先に差し替えた結合テスト）。`dotnet test AuthServer.slnx` で実行（2026-09-09）
@@ -123,7 +127,7 @@ ResourceServer の保護 API (`GET /api/protected`) を呼び出せること。
 - [x] 結合テスト: 認可コード再利用で拒否確認（`invalid_grant`）
 - [x] 🌐 `/connect/authorize` の GET（ブラウザリダイレクト）実装（M3a。`response_mode` は `query` / `form_post`、エラーは RFC 6749 §4.1.2.1 に従って `redirect_uri` へ返す）
 - [ ] 🌐 `/account/login` Blazor ページ実装 ※M3b
-- [ ] 🌐 サーバー側セッションストア（`ITicketStore`）※M3b の前提。現在はクレームをセッション Cookie に直接入れており、
+- [ ] サーバー側セッションストア（`ITicketStore`）※M3b の前提だが実装自体に画面は不要。現在はクレームをセッション Cookie に直接入れており、
       サーバー側にセッションの記録がない。管理画面からの強制ログアウト、Back-Channel Logout の `sid`、
       ログイン中セッションの一覧はいずれもこれがないと作れない
 - [ ] 🌐 サンプルクライアントは 2 種類必要 ※M3b。BFF はホストと同一オリジンで動き、認可サーバーへの通信がすべてサーバー側の
@@ -156,10 +160,13 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] Discovery メタデータ拡張（`claims_supported`, `subject_types_supported`, `request_uri_parameter_supported`）
 - [x] 🖥️ カスタムクレーム（`claim_definitions` / `user_claims`。`/claims` で定義し、Users 画面でユーザーごとの値を設定。型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先を指定。`claims_supported` / `scopes_supported` に動的反映。M2'）
 - [x] 🌐 Discovery に `response_modes_supported` を追加（`query` / `form_post`）
-- [ ] 🌐 RFC 9207 認可応答の `iss`。複数の認可サーバーを使うクライアントに対する mixup 攻撃対策で、方式 A を実装したことで関係するようになった。
+- [ ] RFC 9207 認可応答の `iss`。複数の認可サーバーを使うクライアントに対する mixup 攻撃対策で、方式 A を実装したことで関係するようになった。
       Discovery に `authorization_response_iss_parameter_supported` を追加する。実装量は小さい
 - [ ] ID Token の `sid`。セッションを実装したので意味を持ち、Back-Channel Logout の前提にもなる
-- [ ] RFC 7662 §2.1 の `WWW-Authenticate`。イントロスペクションの 401 に `WWW-Authenticate: Basic realm="..."` を添える
+- [x] 401 応答への `WWW-Authenticate`（2026-09-09）。RFC 9110 §15.5.2 が MUST、RFC 6749 §5.2 と RFC 7662 §2.1 も要求する。
+      クライアント認証を行うトークン・失効・検査・デバイス認可の 4 エンドポイントに `Basic realm="<path>"` を添える
+- [ ] GET `/connect/authorize` が未知の `client_id` に返す 401 には `WWW-Authenticate` が無い。この状況は認証の失敗ではないため、
+      400 に改める方が RFC 9110 §15.5.2 と整合する（挙動変更になるためテストの追随が必要）
 - [ ] Discovery を実装から動的に生成する。グラント・応答タイプ・クライアント認証方式をハードコードしているため、実装とずれる余地がある
       （`claims_supported` と `scopes_supported` はカスタムクレーム定義から動的生成済み）
 - [ ] 🖥️ カスタムクレームのドット記法（`address.street` のような入れ子パス）。OIDC 標準の `address` クレームをハードコードなしに表現できる
@@ -204,7 +211,8 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 鍵の事前公開（2 段階ローテーション。管理画面の Schedule Rotation / `SigningKeyPrePublishSeconds`。M2 で実測: 事前公開期間中に JWKS を取得済みの ResourceServer は新鍵の最初の要求から 200）
 - [x] 署名アルゴリズムの選択（RS256 / ES256。JWKS に EC 鍵を `crv` / `x` / `y` で公開、`SigningKeyAlgorithm` で既定を指定）
 - [x] ResourceServer の JWKS 自動再取得間隔を設定化（`Jwt:JwksRefreshSeconds`、既定 1800。事前公開期間以下にする）
-- [ ] 🌐 `/connect/logout` 実装 ※M3
+- [ ] `/connect/logout` 実装。`id_token_hint` が有効で `post_logout_redirect_uri` が登録済みなら確認画面なしで完結する。
+      確認画面が要るのは `id_token_hint` が無い場合だけ（OIDC RP-Initiated Logout §2）
 - [ ] 🌐 セッション管理（Cookie ベース） ※M3
 - [ ] 🌐 Blazor ログアウト確認画面 ※M3
 - [ ] 🌐 TestClient: ログアウト実装 ※M3
@@ -254,7 +262,7 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 ### B-2. 高優先（実際のシステムで頻出）
 
 - [ ] 🌐 ★★☆ **Front-Channel Logout** — OIDC Front-Channel Logout 1.0。各 RP へ iframe でセッション終了を通知。コスト: 中 ※M3
-- [ ] 🌐 ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。OP 側セッションの終了が発火点のため方式 A が前提。コスト: 中 ※M3
+- [ ] ★★☆ **Back-Channel Logout** — OIDC Back-Channel Logout 1.0。Logout Token (JWT) をサーバー間で送付。OP 側セッションの終了が発火点のため方式 A が前提。コスト: 中 ※M3
 - [x] ★★☆ **`nonce` の厳密検証** — OIDC Core §3.1.2.1。`openid` 要求時は必須（`RequireNonce`）、空白を含まない印字可能 ASCII 512 文字以内、同一クライアントでの再利用を拒否（認可コード + ID Token の寿命の間記録）。TestClient は ID Token の `nonce` 一致を検証（M2'）
 - [ ] 🌐 ★★☆ **外部 IdP 連携（ソーシャルログイン）** — Google / GitHub 等を外部 IdP として受け入れる Federation。コスト: 高 ※M3
 - [x] 🖥️ ★★☆ **監査ログ** — `audit_logs` + `/audit-logs` 画面（イベント / 結果 / クライアント / 自由検索で絞り込み）。保持期間は `AuditLogRetentionDays`（M2'）
@@ -268,7 +276,7 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 ### B-3. 中優先（学習価値は高いが実装コストが大きい）
 
-- [ ] 🌐 ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。リダイレクト型の認可要求が対象のため方式 A が前提。コスト: 高 ※M3
+- [ ] ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。リダイレクト型の認可要求が対象のため方式 A が前提。コスト: 高 ※M3
 - [x] ★★☆ **Resource Indicators** — RFC 8707。トークン要求時の `resource`（複数可）を登録済みリソースサーバーに解決し `aud`（文字列 / 配列）へ。RT は元の付与範囲を保持し、refresh で絞り込み可（M2）
 - [ ] Resource Indicators: 認可要求時（`/connect/authorize`、`/connect/device/authorize`）の `resource` 束縛（RFC 8707 §2.1）。現在はトークン要求時（§2.2）のみ
 - [x] 🖥️ ★☆☆ **カスタムクレーム管理 UI** — `/claims` で定義（型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先）、Users 画面でユーザーごとの値を設定。予約クレーム名は定義不可（M2'）
@@ -299,8 +307,8 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 冒頭の「マイルストーン計画」を参照してください。M2 / M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）/ M2''（HTTPS / レート制限 / CORS / 自動テスト）は完了し、次は M3（🌐 方式 A）です。
 🌐 なしで残る候補は ACR / AMR のモデル化、🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛です。
-ただし「仕様と実装の乖離」に挙げた RFC 6749 §5.1 のキャッシュ制御、UserInfo の POST、POST 認可要求、リフレッシュ時のスコープ縮小は
-いずれも仕様上の MUST なので、M3b より先に片付けます。
+「仕様と実装の乖離」に挙げた MUST のうち、キャッシュ制御・UserInfo の POST・リフレッシュ時のスコープ縮小は 2026-09-09 に対応しました。
+残る POST 認可要求（方式 B の移設）も M3b より先に片付けます。
 
 ---
 
