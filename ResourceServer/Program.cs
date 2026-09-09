@@ -37,7 +37,7 @@ var jwt = builder.Configuration.GetSection("Jwt");
 var authority = jwt["Authority"] ?? throw new InvalidOperationException("Jwt:Authority is required");
 var audience = jwt["Audience"] ?? throw new InvalidOperationException("Jwt:Audience is required");
 
-// 既定は true (安全側)。開発環境は HTTP 構成のため appsettings.Development.json で false に下げている。
+// 既定は true (安全側)。開発環境も dev 証明書で HTTPS 構成のため下げない (HTTP の AuthServer に向けるローカル実験時のみ false にする)。
 var requireHttps = jwt.GetValue("RequireHttpsMetadata", true);
 
 // JWKS (OpenID 構成) の自動再取得間隔。AuthServer の鍵事前公開期間 (SigningKeyPrePublishSeconds) 以下にしておくと、
@@ -89,6 +89,14 @@ if (app.Environment.IsDevelopment())
                .AddHttpAuthentication("Bearer", scheme => { scheme.Token = string.Empty; });
     });
 }
+
+// SEC-01: HTTPS 必須。本番相当では HTTP を HTTPS へリダイレクトして HSTS を送る
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();

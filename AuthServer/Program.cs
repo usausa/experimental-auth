@@ -2,6 +2,7 @@ using AuthServer.Components;
 using AuthServer.Database;
 using AuthServer.Endpoints;
 using AuthServer.Models;
+using AuthServer.Security;
 using AuthServer.Services;
 
 using MudBlazor.Services;
@@ -28,7 +29,12 @@ builder.Services.AddOpenApi(options =>
 
 builder.Services.Configure<AuthServerOptions>(builder.Configuration.GetSection("AuthServer"));
 
-var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "Data");
+// SEC-09 レート制限 / SEC-10 CORS (RateLimiting / Cors セクション)
+builder.Services.AddAuthServerRateLimiting(builder.Configuration);
+builder.Services.AddAuthServerCors(builder.Configuration);
+
+// SQLite の配置先。Data:Directory で上書きできる (結合テストは一時ディレクトリを使う)。相対パスはコンテンツルート基準
+var dataDirectory = Path.GetFullPath(builder.Configuration["Data:Directory"] ?? "Data", builder.Environment.ContentRootPath);
 
 // テストデータの投入は Seed:Enabled で制御する。未設定時は Development 環境のみ有効。
 // 既知の資格情報 (test-client / alice など) が本番環境で作られることを防ぐ。
@@ -80,6 +86,7 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    app.UseHsts();
 }
 else
 {
@@ -90,6 +97,11 @@ else
                .WithOpenApiRoutePattern("/api-docs/{documentName}.json");
     });
 }
+
+// SEC-01: HTTPS 必須。開発環境は dev 証明書で HTTPS のみをリッスンし、本番相当では HTTP を HTTPS へリダイレクトして HSTS を送る
+app.UseHttpsRedirection();
+app.UseCors();
+app.UseRateLimiter();
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseAntiforgery();
 

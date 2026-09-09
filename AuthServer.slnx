@@ -12,6 +12,10 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/AuthServer.Tests/AuthServer.Tests.csproj" />
+    <Project Path="Tests/ResourceServer.Tests/ResourceServer.Tests.csproj" />
+  </Folder>
   <Project Path="AppHost/AppHost.csproj" Id="a1b2c3d4-e5f6-7890-abcd-ef1234567890" />
   <Project Path="AuthServer/AuthServer.csproj" Id="086490a3-6493-42ac-81c7-1c7a3dd4f049" />
   <Project Path="ResourceServer/ResourceServer.csproj" Id="7fa0b037-1d26-4192-ab83-c5bab31dd292" />

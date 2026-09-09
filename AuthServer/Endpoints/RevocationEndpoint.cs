@@ -19,6 +19,8 @@ public static class RevocationEndpoint
             .Produces(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
+            .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
             .AllowAnonymous();
     }
 

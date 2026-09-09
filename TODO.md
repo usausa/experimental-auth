@@ -8,7 +8,7 @@
 - 🌐 = **ブラウザリダイレクト（方式 A / M3）が前提**。リダイレクトフローとサーバー側セッションがないと成立しない
 - 🖥️ = エンドユーザー向けのブラウザ画面は必要だが、リダイレクトフロー・セッションは不要（API-only のマイルストーンでも実装できる）
 
-*最終更新: 2026-09-06*
+*最終更新: 2026-09-09*
 
 ---
 
@@ -21,7 +21,7 @@
 | M1 | トークンライフサイクル（Phase 4 前半）: `/connect/revoke`・`/connect/introspect`・JTI 失効リスト・SEC-04 ファミリー失効・スキーママイグレーション機構・鍵ローテーション・クリーンアップジョブ・TestClient `revoke` / `introspect` | ✅ 完了（2026-09-05） |
 | M2 | API-only 候補の一部: 鍵の事前公開（2 段階ローテーション）、Device Authorization Grant（承認画面 🖥️ + TestClient `device`）、Resource Indicators（RFC 8707、トークン要求時）、ES256、トークン有効期限の全設定化と推奨値（`SPEC.md` §8.3） | ✅ 完了（2026-09-05） |
 | M2' | API-only 追加分（2026-09-06 に前倒し）: JWT Replay 検出（`private_key_jwt` クライアント認証 + `jti` の一回性、`replay_guard` テーブル）、登録済みクライアント認証方式の強制、`nonce` の厳密検証、監査ログ + 確認画面 🖥️（`/audit-logs`）、カスタムクレーム + 管理画面 🖥️（`/claims`、Users 画面のクレーム編集） | ✅ 完了（2026-09-06） |
-| M2'' | 見送り中の API-only 候補: DPoP、Dynamic Client Registration + Clients 管理画面、Pairwise Subject、レート制限 | 🔲 M3 の後で必要なら |
+| M2'' | セキュリティ要件の残り（2026-09-09）: HTTPS 構成（SEC-01）、レート制限（SEC-09）、CORS（SEC-10）と、xUnit + WebApplicationFactory の結合テスト（`Tests/`） | ✅ 完了（2026-09-09） |
 | M3 | 🌐 ブラウザリダイレクト（方式 A）と、それを前提とする項目: 同意画面、`/connect/logout` とセッション管理、`prompt`、外部 IdP、Front-Channel Logout | 🔲 次 |
 
 **アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
@@ -49,10 +49,12 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効
 - [ ] 🌐 `/connect/authorize` を標準のブラウザリダイレクト方式（`SPEC.md` §6.3 方式 A）で実装する ※M3
       現在は方式 B（API 専用・資格情報直送）のみ。方式 B は信頼モデルが ROPC 相当のため、
       同意画面・`prompt` パラメーター・外部 IdP 連携が成立しません
-- [ ] HTTPS 構成が未対応（`SPEC.md` SEC-01）。現在は AuthServer / ResourceServer とも HTTP。
-      ResourceServer の `RequireHttpsMetadata` は既定 `true` に変更済み（Development のみ `false`）
-- [ ] レート制限が未実装（`SPEC.md` SEC-09）。Token / Authorize エンドポイントのブルートフォース対策
-- [ ] CORS 設定が未実装（`SPEC.md` SEC-10）
+- [x] HTTPS 構成（`SPEC.md` SEC-01）。開発環境も dev 証明書で HTTPS のみをリッスン（AuthServer `https://localhost:5080`、ResourceServer `https://localhost:5180`）。
+      本番相当では HTTP → HTTPS リダイレクトと HSTS。ResourceServer の `RequireHttpsMetadata` は全環境で `true`（2026-09-09）
+- [x] レート制限（`SPEC.md` SEC-09）。クライアント IP ごとの固定ウィンドウ。`/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、
+      トークン系は `TokenPermitLimit`（既定 60/分）。超過は 429 + `Retry-After`。Blazor の承認画面（SignalR）は対象外（2026-09-09）
+- [x] CORS（`SPEC.md` SEC-10）。`Cors:AllowedOrigins` のオリジンだけにプロトコルエンドポイントを許可し、Discovery / JWKS は任意オリジンの GET を許可（2026-09-09）
+- [x] 自動テスト。`Tests/AuthServer.Tests`（xUnit + WebApplicationFactory、一時 SQLite、seed 有効）と `Tests/ResourceServer.Tests`（AuthServer の TestServer を JWKS の取得先に差し替えた結合テスト）。`dotnet test AuthServer.slnx` で実行（2026-09-09）
 
 ---
 
@@ -172,8 +174,6 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] `/connect/device/authorize` 実装 (`Endpoints/DeviceAuthorizationEndpoint.cs`。公開クライアント `test-device` を seed に追加)
 - [x] 🖥️ `/account/device` Blazor ページ実装（`Pages/DeviceActivation.razor`、`PublicLayout`。単一フォームで完結し、リダイレクトもセッションも不要）
 - [x] デバイスフローポーリング処理（`authorization_pending`, `slow_down`, `access_denied`, `expired_token`。承認後の交換は 1 回のみ）
-- [ ] `/connect/register` 実装（クライアント動的登録）
-- [ ] `/connect/register/{client_id}` CRUD 実装
 - [ ] 🖥️ `/account/register` Blazor ページ実装（ユーザー登録）
 - [ ] 🖥️ `/account/password` Blazor ページ実装（パスワード変更。現在のパスワード入力で認証し、セッションは不要）
 - [ ] 🖥️ `/account/password-reset` Blazor ページ実装（パスワードリセット。メール送信基盤が別途必要）
@@ -181,7 +181,6 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] TestClient: デバイスフロー実装（`device` コマンド。`slow_down` で間隔を +5 秒）
 - [x] TestClient: `--auth-method`（`client_secret_post` / `client_secret_basic` / `private_key_jwt` / `none`）と `--client-key`、`keygen`（P-256 鍵ペア生成）/ `assertion`（クライアントアサーション出力）コマンド（M2'）
 - [x] 🖥️ 結合テスト: デバイスフロー全体フロー（2026-09-05 実機確認: ブラウザで承認 → TestClient がトークン取得 → ResourceServer 200。`slow_down` / 他クライアントの拒否も確認）
-- [ ] 結合テスト: クライアント動的登録・管理
 - [ ] 🖥️ 結合テスト: ユーザー登録・パスワード変更
 
 ---
@@ -205,7 +204,6 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 - [x] ★★★ **JWT Replay 検出** — RFC 7519 §4.1.7。`replay_guard` に一回限りの値（kind + value）を期限つきで記録。`private_key_jwt` の `jti`（RFC 7523 §3）と認可要求の `nonce` に適用し、再提示は `invalid_client` / `invalid_request` で拒否して監査ログ `replay_detected` に記録。AT の `jti` は失効リスト、認可コード / RT の再提示はファミリー失効（SEC-04）で扱う（M2'）
 - [ ] 🌐 ★★★ **`prompt` パラメーター対応**（`none` / `login` / `consent` / `select_account`）— OIDC Core §3.1.2.1。SSO の核心。`prompt=none` で既存セッション検出、`prompt=login` で強制再認証。コスト: 中 ※M3
-- [ ] ★★★ **Pairwise Subject Types** — OIDC Core §8。クライアントごとに異なる `sub` を返すプライバシー保護。コスト: 中
 - [ ] 🌐 ★★☆ **PAR（Pushed Authorization Request）** — RFC 9126。認可リクエストを事前にサーバーへ送付し `request_uri` で参照。リダイレクト型の認可要求を保護する仕様のため方式 A が前提。コスト: 中 ※M3
 - [x] ★★☆ **複数署名アルゴリズム対応（ES256）** — RFC 7518。管理画面でローテーション時に RS256 / ES256 を選択。JWKS・検証・Discovery を対応（M2）
 
@@ -222,12 +220,9 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 ### B-3. 中優先（学習価値は高いが実装コストが大きい）
 
 - [ ] 🌐 ★★☆ **Request Object / JAR** — RFC 9101。認可リクエストを JWT 化して署名・暗号化。リダイレクト型の認可要求が対象のため方式 A が前提。コスト: 高 ※M3
-- [ ] ★★☆ **DPoP** — RFC 9449。Bearer トークン盗難対策（所有証明）。コスト: 高
 - [x] ★★☆ **Resource Indicators** — RFC 8707。トークン要求時の `resource`（複数可）を登録済みリソースサーバーに解決し `aud`（文字列 / 配列）へ。RT は元の付与範囲を保持し、refresh で絞り込み可（M2）
 - [ ] Resource Indicators: 認可要求時（`/connect/authorize`、`/connect/device/authorize`）の `resource` 束縛（RFC 8707 §2.1）。現在はトークン要求時（§2.2）のみ
-- [ ] ★☆☆ **ユーザーグループ / ロール管理** — グループ単位のクレーム付与・アクセス制御。コスト: 中
 - [x] 🖥️ ★☆☆ **カスタムクレーム管理 UI** — `/claims` で定義（型 string / number / boolean / json、必要スコープ、AT / ID Token / UserInfo の出力先）、Users 画面でユーザーごとの値を設定。予約クレーム名は定義不可（M2'）
-- [ ] ★☆☆ **SCIM 2.0** — RFC 7642〜7644。ユーザープロビジョニング標準。コスト: 高
 
 ### B-4. 対象外（実装しない）
 
@@ -242,11 +237,16 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 | Authlete SaaS 型 | 外部委譲はフルスクラッチ学習の趣旨に反する |
 | 複数 DB バックエンド | SQLite で十分。運用課題 |
 | CIBA（OpenID CIBA 1.0） | 2026-09-06 に不要と判断。バックチャネルで別デバイスに承認を求める流れは、実装済みの Device Authorization Grant で学習範囲を代替できる |
+| Dynamic Client Registration（RFC 7591 / 7592） | 2026-09-09 に不要と判断。クライアントは seed / DB で管理する。`/connect/register` と Clients 管理画面は作らない |
+| Pairwise Subject Types（OIDC Core §8） | 2026-09-09 に不要と判断。`sub` は `public` のみ |
+| DPoP（RFC 9449） | 2026-09-09 に不要と判断。Bearer トークンの盗難対策は短寿命 AT + RT ローテーション + `private_key_jwt` で足りるとする |
+| ユーザーグループ / ロール管理 | 2026-09-09 に不要と判断。必要ならカスタムクレーム（`roles` などを json 型で定義）で代替する |
+| SCIM 2.0（RFC 7643 / 7644） | 2026-09-09 に不要と判断。ユーザー管理は管理画面で行う |
 
 ### 着手順
 
-冒頭の「マイルストーン計画」を参照してください。M2 と M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）は完了し、次は M3（🌐 方式 A）です。
-残る 🌐 なしの候補（DPoP、DCR、Pairwise Sub、レート制限）は M3 の後に必要なものを選びます。
+冒頭の「マイルストーン計画」を参照してください。M2 / M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）/ M2''（HTTPS / レート制限 / CORS / 自動テスト）は完了し、次は M3（🌐 方式 A）です。
+🌐 なしで残る候補は 🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛だけで、いずれも M3 の後に必要なら着手します。
 
 ---
 

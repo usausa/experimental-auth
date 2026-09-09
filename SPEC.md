@@ -113,14 +113,15 @@ OAuth 2.0 および OpenID Connect の仕様に準拠した認証サーバーを
 
 | コンポーネント | URL | 備考 |
 |--------------|-----|------|
-| AuthServer | `http://localhost:5080` | Issuer。API + Blazor UI |
-| ResourceServer | `http://localhost:5180` | Authority = AuthServer。`aud` もこの値 |
+| AuthServer | `https://localhost:5080` | Issuer。API + Blazor UI |
+| ResourceServer | `https://localhost:5180` | Authority = AuthServer。`aud` もこの値 |
 | AppHost (Aspire ダッシュボード) | `http://localhost:15000` | オーケストレーション |
 | TestClient | — | コンソールアプリ |
 
-現状は開発利便性のため HTTP で構成しています。ResourceServer の `RequireHttpsMetadata` は
-既定で `true` であり、`appsettings.Development.json` のみ `false` に下げています。
-本番相当の設定では Authority を HTTPS にし、この上書きを行わないでください。
+開発環境も ASP.NET Core の開発証明書（`dotnet dev-certs https --trust`）で **HTTPS のみ**をリッスンします（SEC-01）。
+`launchSettings.json` の `applicationUrl` は https だけで、HTTP のリスナーはありません。本番相当の環境で HTTP も束縛する場合は
+`UseHttpsRedirection` が HTTPS へリダイレクトし、`UseHsts` が HSTS を送ります。ResourceServer の `RequireHttpsMetadata` は全環境で `true` です。
+Git Bash の curl は Windows の証明書ストアを見ないため、手動確認では `curl -k` を使います。
 
 ---
 
@@ -491,7 +492,7 @@ Phase 2 の実装に伴い、本フェーズの一部を先行実装済みです
 
 ```json
 {
-  "iss": "http://localhost:5080",
+  "iss": "https://localhost:5080",
   "sub": "user123",
   "aud": "client_app",
   "exp": 1700000000,
@@ -507,7 +508,7 @@ Phase 2 の実装に伴い、本フェーズの一部を先行実装済みです
 
 ```json
 {
-  "iss": "http://localhost:5080",
+  "iss": "https://localhost:5080",
   "aud": "test-webapp",
   "sub": "user-001",
   "exp": 1788591415,
@@ -758,15 +759,15 @@ User/Browser     CLI App              AuthServer
      │              │ {                    │
      │              │  "device_code": "DC-xxx",
      │              │  "user_code": "ABCD-EFGH",
-     │              │  "verification_uri": "http://localhost:5080/account/device",
-     │              │  "verification_uri_complete": "http://localhost:5080/account/device?user_code=ABCD-EFGH",
+     │              │  "verification_uri": "https://localhost:5080/account/device",
+     │              │  "verification_uri_complete": "https://localhost:5080/account/device?user_code=ABCD-EFGH",
      │              │  "expires_in": 600,  │
      │              │  "interval": 5       │
      │              │ }                    │
      │              │                      │
      │  [CLI画面表示]│                      │
      │  "以下のURLにアクセスしてコードを入力してください"
-     │  "URL: http://localhost:5080/account/device"
+     │  "URL: https://localhost:5080/account/device"
      │  "コード: ABCD-EFGH"               │
      │              │                      │
      │  ブラウザでアクセス                   │
@@ -867,7 +868,7 @@ https://client.example.com/callback
 
 | # | 対策 | 対象 | 実装 | 詳細 |
 |---|------|------|------|------|
-| SEC-01 | HTTPS 必須 | 全通信 | 🔲 | 開発環境でも自己署名証明書で TLS を使用。現在は HTTP 構成（§2.5）。ResourceServer の `RequireHttpsMetadata` は既定 `true`（Development のみ `false`） |
+| SEC-01 | HTTPS 必須 | 全通信 | ✅ | 開発環境も dev 証明書で HTTPS のみをリッスン（§2.5）。本番相当では HTTP → HTTPS リダイレクト + HSTS。ResourceServer の `RequireHttpsMetadata` は全環境で `true` |
 | SEC-02 | PKCE 必須 | Authorization Code Flow | ✅ | S256 のみ許可。`code_challenge` 省略時はエラー |
 | SEC-03 | state パラメータ検証 | Authorization Endpoint | ✅ | CSRF 防止。サーバーは `state` を認可コードと共に保存し応答で返却、TestClient が送信値との一致を検証（RFC 6749 §10.12 の役割分担どおり） |
 | SEC-04 | 認可コード一回限り使用 | Token Endpoint | ✅ | `consumed_at` で消費済みを記録。再提示時はそのコードから派生した RT ファミリー（`source_code_hash`）をすべて失効。ローテーション後の旧 RT の再提示も同様にファミリー失効 |
@@ -875,8 +876,8 @@ https://client.example.com/callback
 | SEC-06 | パスワードハッシュ化 | ユーザー管理 | ✅ | PBKDF2-SHA256 / 60 万回反復 + `FixedTimeEquals` |
 | SEC-07 | トークン有効期限 | JWT | ✅ | すべて `AuthServer` セクションで設定可能。既定値は §8.3 の推奨値（アクセストークン 15 分、リフレッシュトークン 7 日（無操作）/ 30 日（絶対）、認可コード 2 分、デバイスコード 10 分） |
 | SEC-08 | 暗号学的乱数使用 | コード・トークン生成 | ✅ | `RandomNumberGenerator.GetBytes(32)` を使用 |
-| SEC-09 | レート制限 | Token Endpoint, Login | 🔲 | ブルートフォース防止。未実装 |
-| SEC-10 | CORS 制限 | 全エンドポイント | 🔲 | 許可オリジンを明示的に設定。未実装 |
+| SEC-09 | レート制限 | Token / Authorize / Device / Revoke / Introspect / UserInfo | ✅ | クライアント IP ごとの固定ウィンドウ（`Security/RateLimitingExtensions.cs`）。資格情報を受け取る `/connect/authorize` は `RateLimiting:AuthenticationPermitLimit`（既定 10/分）、トークン系は `TokenPermitLimit`（既定 60/分）。超過は 429 + `Retry-After` + `temporarily_unavailable`。Blazor の承認画面（SignalR 経由）は対象外。リバースプロキシ配下では ForwardedHeaders の構成が前提 |
+| SEC-10 | CORS 制限 | プロトコルエンドポイント | ✅ | `Cors:AllowedOrigins` に列挙したオリジンだけに GET / POST（`Authorization` / `Content-Type` ヘッダー）を許可（`Security/CorsExtensions.cs`）。未設定なら CORS 応答ヘッダーを返さない。Discovery / JWKS は公開メタデータとして任意オリジンの GET を許可 |
 | SEC-11 | クライアント認証方式の強制 | Token / Revocation / Introspection / Device | ✅ | 登録済み `token_endpoint_auth_method` 以外での認証を拒否。`private_key_jwt` は署名・`iss` / `sub` / `aud` / `exp`・寿命上限・`jti` の一回性を検証（§6.3） |
 | SEC-12 | リプレイ検出 | client_assertion / nonce / 認可コード / RT | ✅ | `replay_guard`（`jti`、`nonce`）とファミリー失効（認可コード・RT）。検出時は監査ログ `replay_detected` に記録 |
 | SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5） |
@@ -893,9 +894,9 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 
 ```json
 {
-  "iss": "http://localhost:5080",
+  "iss": "https://localhost:5080",
   "sub": "user123",
-  "aud": "http://localhost:5180",
+  "aud": "https://localhost:5180",
   "exp": 1700000000,
   "iat": 1699996400,
   "nbf": 1699996400,
@@ -946,14 +947,14 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 
 ```json
 {
-  "issuer": "http://localhost:5080",
-  "authorization_endpoint": "http://localhost:5080/connect/authorize",
-  "token_endpoint": "http://localhost:5080/connect/token",
-  "userinfo_endpoint": "http://localhost:5080/connect/userinfo",
-  "jwks_uri": "http://localhost:5080/.well-known/jwks.json",
-  "revocation_endpoint": "http://localhost:5080/connect/revoke",
-  "introspection_endpoint": "http://localhost:5080/connect/introspect",
-  "device_authorization_endpoint": "http://localhost:5080/connect/device/authorize",
+  "issuer": "https://localhost:5080",
+  "authorization_endpoint": "https://localhost:5080/connect/authorize",
+  "token_endpoint": "https://localhost:5080/connect/token",
+  "userinfo_endpoint": "https://localhost:5080/connect/userinfo",
+  "jwks_uri": "https://localhost:5080/.well-known/jwks.json",
+  "revocation_endpoint": "https://localhost:5080/connect/revoke",
+  "introspection_endpoint": "https://localhost:5080/connect/introspect",
+  "device_authorization_endpoint": "https://localhost:5080/connect/device/authorize",
   "grant_types_supported": [
     "client_credentials", "authorization_code", "refresh_token",
     "urn:ietf:params:oauth:grant-type:device_code"
@@ -998,16 +999,16 @@ AuthServer 自身のエンドポイント（UserInfo / Introspection）で照合
 
 ```json
 {
-  "issuer": "http://localhost:5080",
-  "authorization_endpoint": "http://localhost:5080/connect/authorize",
-  "token_endpoint": "http://localhost:5080/connect/token",
-  "userinfo_endpoint": "http://localhost:5080/connect/userinfo",
-  "jwks_uri": "http://localhost:5080/.well-known/jwks.json",
-  "revocation_endpoint": "http://localhost:5080/connect/revoke",
-  "introspection_endpoint": "http://localhost:5080/connect/introspect",
-  "device_authorization_endpoint": "http://localhost:5080/connect/device/authorize",
-  "end_session_endpoint": "http://localhost:5080/connect/logout",
-  "registration_endpoint": "http://localhost:5080/connect/register",
+  "issuer": "https://localhost:5080",
+  "authorization_endpoint": "https://localhost:5080/connect/authorize",
+  "token_endpoint": "https://localhost:5080/connect/token",
+  "userinfo_endpoint": "https://localhost:5080/connect/userinfo",
+  "jwks_uri": "https://localhost:5080/.well-known/jwks.json",
+  "revocation_endpoint": "https://localhost:5080/connect/revoke",
+  "introspection_endpoint": "https://localhost:5080/connect/introspect",
+  "device_authorization_endpoint": "https://localhost:5080/connect/device/authorize",
+  "end_session_endpoint": "https://localhost:5080/connect/logout",
+  "registration_endpoint": "https://localhost:5080/connect/register",
   "scopes_supported": [
     "openid", "profile", "email", "offline_access", "api.read", "api.write"
   ],
@@ -1251,7 +1252,7 @@ CREATE TABLE user_claims (
 | クライアント | `test-webapp` | `webapp-secret` | `authorization_code` + `refresh_token` 用 |
 | クライアント | `test-device` | （なし・公開クライアント） | `urn:ietf:params:oauth:grant-type:device_code` + `refresh_token` 用。`token_endpoint_auth_method = none` |
 | クライアント | `test-jwt-client` | （なし・`private_key_jwt`） | `client_credentials` 用。`jwks` に ES256 公開鍵（kid `test-jwt-client-key-1`）を登録。対応する秘密鍵は TestClient に開発用フィクスチャとして同梱 |
-| リソースサーバー | `resource-server-001` | — | audience = `http://localhost:5180` |
+| リソースサーバー | `resource-server-001` | — | audience = `https://localhost:5180` |
 | ユーザー | `alice` (`user-001`) | `password` | Alice Tester / alice@example.com |
 | カスタムクレーム | `department` | — | `profile` スコープで ID Token / UserInfo に出力する定義と、alice の値 `Engineering` |
 
@@ -1275,7 +1276,7 @@ VALUES ('test-webapp', '<hashed_secret>', 'Test Web App (authorization_code)',
 -- 既定のリソースサーバー（users より先に投入する必要あり）
 INSERT INTO resource_servers (resource_server_id, name, audience, description,
                               is_active, created_at, updated_at)
-VALUES ('resource-server-001', 'ResourceServer', 'http://localhost:5180',
+VALUES ('resource-server-001', 'ResourceServer', 'https://localhost:5180',
         'Default resource server', 1, <utc_now>, <utc_now>);
 
 -- 開発用ユーザー
@@ -1346,7 +1347,7 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 
 | セクション | キー | 既定値 | 説明 |
 |-----------|------|-------|------|
-| `AuthServer` | `Issuer` | `http://localhost:5080` | `iss` と Discovery の基準 URL |
+| `AuthServer` | `Issuer` | `https://localhost:5080` | `iss` と Discovery の基準 URL |
 | `AuthServer` | `AccessTokenLifetimeSeconds` 他 | §8.3 | トークン有効期限一式 |
 | `AuthServer` | `JwksCacheMaxAgeSeconds` | 3600 | JWKS 応答の `Cache-Control: max-age` |
 | `AuthServer` | `SigningKeyAlgorithm` | `RS256` | 初期鍵・自動ローテーションで生成する鍵のアルゴリズム（`RS256` / `ES256`） |
@@ -1357,6 +1358,12 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 | `AuthServer` | `ClientAssertionMaxLifetimeSeconds` | 300 | `private_key_jwt` のクライアントアサーションに許容する寿命（`exp` − `iat`） |
 | `AuthServer` | `RequireNonce` | true | `openid` を含む認可要求に `nonce` を必須にする |
 | `AuthServer` | `AuditLogRetentionDays` | 90 | 監査ログの保持期間。保守ジョブがこれより古いエントリを削除 |
+| `RateLimiting` | `Enabled` | true | レート制限の有効 / 無効（結合テストでは無効にする） |
+| `RateLimiting` | `WindowSeconds` | 60 | 固定ウィンドウの長さ |
+| `RateLimiting` | `AuthenticationPermitLimit` | 10 | `/connect/authorize` のウィンドウあたり許可数（IP ごと）。0 以下で無制限 |
+| `RateLimiting` | `TokenPermitLimit` | 60 | トークン系エンドポイントのウィンドウあたり許可数（IP ごと）。0 以下で無制限 |
+| `Cors` | `AllowedOrigins` | []（Development は `http://localhost:5173`） | プロトコルエンドポイントに CORS を許可するオリジン |
+| `Data` | `Directory` | `Data`（コンテンツルート基準） | SQLite ファイルの配置先。結合テストは一時ディレクトリを指定する |
 | `Seed` | `Enabled` | Development のみ true | テストデータ投入の可否 |
 | `Jwt`（ResourceServer） | `Authority` / `Audience` | — | 検証する発行者と audience |
 | `Jwt`（ResourceServer） | `RequireHttpsMetadata` | true | Development のみ false |
@@ -1376,6 +1383,20 @@ ServiceDefaults を Host に統合していますが、本プロジェクトは 
 - 仕様と実装の乖離に起因する課題
 
 仕様書側の各 Phase 節（§6.2〜§6.6）には実装状況の概要を記載しています。
+
+### 13.1 自動テスト
+
+`Tests/AuthServer.Tests`（xUnit + `WebApplicationFactory`）が AuthServer を TestServer 上で起動し、Discovery / クライアント認証（4 方式 + `jti` リプレイ）/
+方式 B の認可コードフロー（`nonce` 厳密検証、PKCE、コード再利用のファミリー失効）/ リフレッシュトークンのローテーションとリプレイ /
+失効・検査 / Device Flow / Resource Indicators / カスタムクレーム / レート制限 / CORS / 監査ログとリプレイ記録を検証します。
+DB はテストクラスごとに独立した一時ディレクトリの SQLite（`Data:Directory`）で、seed を有効にし、レート制限は既定で無効にします。
+
+`Tests/ResourceServer.Tests` は AuthServer と ResourceServer の 2 つの TestServer を起動し、ResourceServer の JWKS 取得先を
+AuthServer の TestServer に差し替えて、発行者・署名・audience・スコープの検証と、失効した AT が有効期限まで受理される方式 3 の挙動を確認します。
+
+```bash
+dotnet test AuthServer.slnx
+```
 
 ---
 

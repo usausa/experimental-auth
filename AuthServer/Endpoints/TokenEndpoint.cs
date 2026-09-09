@@ -16,6 +16,8 @@ public static class TokenEndpoint
             .Produces<object>(StatusCodes.Status200OK, "application/json")
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
+            .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
             .AllowAnonymous();
     }
 

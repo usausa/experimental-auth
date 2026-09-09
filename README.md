@@ -8,8 +8,8 @@ OAuth 2.0 / OpenID Connect 準拠の認証サーバーを .NET 10 でスクラ�
 
 | コンポーネント | 種別 | フレームワーク | デフォルト URL |
 |--------------|------|--------------|--------------|
-| **AuthServer** | Web API + Web UI | .NET 10 Minimal API + Blazor Server | `http://localhost:5080` |
-| **ResourceServer** | Web API | .NET 10 Minimal API | `http://localhost:5180` |
+| **AuthServer** | Web API + Web UI | .NET 10 Minimal API + Blazor Server | `https://localhost:5080` |
+| **ResourceServer** | Web API | .NET 10 Minimal API | `https://localhost:5180` |
 | **TestClient** | CLI ツール | .NET 10 Console | — |
 
 > **本番構成の注意**
@@ -32,6 +32,10 @@ dotnet run -- <command> [options]
 
 > Git Bash から実行する場合は `MSYS_NO_PATHCONV=1` を付けてください。
 > `--path /api/protected` のような引数が Windows パス（`C:/Program Files/Git/api/protected`）に変換されるためです。
+
+> AuthServer / ResourceServer は開発環境でも HTTPS のみで起動します（`https://localhost:5080` / `https://localhost:5180`）。
+> 初回は開発証明書を信頼させてください: `dotnet dev-certs https --trust`。
+> Git Bash の curl は Windows の証明書ストアを参照しないため、curl で試すときは `-k` を付けます。
 
 ### コマンド一覧
 
@@ -58,7 +62,7 @@ AuthServer は **API 専用サーバー**のため、ブラウザリダイレク
 ```bash
 # 1. authorization_code + PKCE でトークンを取得(認可コード取得とトークン交換を自動実行)
 dotnet run -- token \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --grant authorization_code \
   --client-id test-webapp \
   --client-secret webapp-secret \
@@ -68,22 +72,22 @@ dotnet run -- token \
 
 # 2. 取得したアクセストークンで保護 API を呼び出す
 dotnet run -- api \
-  --resource http://localhost:5180 \
+  --resource https://localhost:5180 \
   --path /api/protected
 
 # 3. UserInfo エンドポイントでユーザー情報を取得する
 dotnet run -- userinfo \
-  --auth http://localhost:5080
+  --auth https://localhost:5080
 
 # 4. リフレッシュトークンでアクセストークンを更新する
 dotnet run -- refresh \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --client-id test-webapp \
   --client-secret webapp-secret
 
 # 5. 再更新後にもう一度 API を呼び出す
 dotnet run -- api \
-  --resource http://localhost:5180 \
+  --resource https://localhost:5180 \
   --path /api/protected
 ```
 
@@ -93,11 +97,11 @@ dotnet run -- api \
 
 ```bash
 # 1. Discovery ドキュメントでサーバー設定を確認(任意)
-dotnet run -- discovery --auth http://localhost:5080
+dotnet run -- discovery --auth https://localhost:5080
 
 # 2. client_credentials グラントでアクセストークンを取得
 dotnet run -- token \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --grant client_credentials \
   --client-id test-client \
   --client-secret test-secret \
@@ -105,19 +109,19 @@ dotnet run -- token \
 
 # 3. 取得したトークンで保護 API を呼び出す
 dotnet run -- api \
-  --resource http://localhost:5180 \
+  --resource https://localhost:5180 \
   --path /api/protected \
   --method GET
 
 # 4. トークンのメタ情報を確認する
 dotnet run -- introspect \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --client-id test-client \
   --client-secret test-secret
 
 # 5. 使い終わったらトークンを失効させる(アクセストークンと、あればリフレッシュトークンの両方)
 dotnet run -- revoke \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --client-id test-client \
   --client-secret test-secret
 ```
@@ -145,14 +149,14 @@ dotnet run -- api \
 ```bash
 # 環境 A のトークンを取得して保存
 dotnet run -- token \
-  --auth http://localhost:5080 \
+  --auth https://localhost:5080 \
   --client-id test-client \
   --client-secret test-secret \
   --token-file /tmp/tokens-env-a.json
 
 # 環境 A のトークンで API を呼び出す
 dotnet run -- api \
-  --resource http://localhost:5180 \
+  --resource https://localhost:5180 \
   --token-file /tmp/tokens-env-a.json
 ```
 
@@ -165,11 +169,11 @@ dotnet run -- api \
 # 1. デバイス認可を要求すると user_code と承認 URL が表示され、承認されるまでポーリングします
 dotnet run -- device --scope "openid profile email api.read"
 
-# 2. 表示された URL (http://localhost:5080/account/device?user_code=XXXX-XXXX) をブラウザで開き、
+# 2. 表示された URL (https://localhost:5080/account/device?user_code=XXXX-XXXX) をブラウザで開き、
 #    alice / password でサインインして Approve を押す。CLI 側がトークンを受け取ってファイルに保存します
 
 # 3. 取得したアクセストークンで保護 API を呼び出す
-dotnet run -- api --resource http://localhost:5180 --path /api/protected
+dotnet run -- api --resource https://localhost:5180 --path /api/protected
 ```
 
 #### ユースケース 6: private_key_jwt でクライアント認証する(RFC 7523)
@@ -196,7 +200,7 @@ dotnet run -- assertion --client-id test-jwt-client
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
 | `--grant` | `-g` | `client_credentials` | グラントタイプ (`client_credentials` \| `authorization_code`) |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
@@ -212,7 +216,7 @@ dotnet run -- assertion --client-id test-jwt-client
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--resource` | `-r` | `http://localhost:5180` | ResourceServer の URL |
+| `--resource` | `-r` | `https://localhost:5180` | ResourceServer の URL |
 | `--path` | — | `/api/protected` | 呼び出す API パス |
 | `--method` | `-m` | `GET` | HTTP メソッド (`GET` \| `POST` \| `PUT` \| `DELETE`) |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークン読み込み元パス |
@@ -221,7 +225,7 @@ dotnet run -- assertion --client-id test-jwt-client
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
 | `--auth-method` | — | `client_secret_post` | クライアント認証方式 (`client_secret_post` \| `client_secret_basic` \| `private_key_jwt` \| `none`) |
@@ -233,7 +237,7 @@ dotnet run -- assertion --client-id test-jwt-client
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-client` | クライアント ID |
 | `--client-secret` | — | `test-secret` | クライアントシークレット |
 | `--auth-method` | — | `client_secret_post` | クライアント認証方式 (`client_secret_post` \| `client_secret_basic` \| `private_key_jwt` \| `none`) |
@@ -245,14 +249,14 @@ dotnet run -- assertion --client-id test-jwt-client
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
 | `--token-file` | `-f` | `~/.testclient/tokens.json` | トークンファイルパス(`userinfo` のみ) |
 
 #### `device`
 
 | オプション | 短縮形 | デフォルト値 | 説明 |
 |-----------|-------|------------|------|
-| `--auth` | `-a` | `http://localhost:5080` | AuthServer の URL |
+| `--auth` | `-a` | `https://localhost:5080` | AuthServer の URL |
 | `--client-id` | — | `test-device` | クライアント ID(既定は公開クライアント) |
 | `--client-secret` | — | — | クライアントシークレット(機密クライアントの場合のみ) |
 | `--scope` | `-s` | `openid profile email api.read` | スコープ(スペース区切り) |
@@ -261,6 +265,17 @@ dotnet run -- assertion --client-id test-jwt-client
 ### トークンの保存場所
 
 取得したトークンは `~/.testclient/tokens.json` に保存されます。各コマンドはこのファイルを参照してトークンを利用します。
+
+---
+
+## 自動テスト
+
+`Tests/AuthServer.Tests`（AuthServer の結合テスト）と `Tests/ResourceServer.Tests`（AuthServer + ResourceServer を TestServer 上でつないだ結合テスト）を
+xUnit + `WebApplicationFactory` で用意しています。DB はテストごとに一時ディレクトリの SQLite を使うので、開発用 DB には影響しません。
+
+```bash
+dotnet test AuthServer.slnx
+```
 
 ---
 

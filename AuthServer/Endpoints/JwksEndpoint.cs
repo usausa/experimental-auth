@@ -18,6 +18,7 @@ public static class JwksEndpoint
             .WithSummary("JSON Web Key Set (JWKS) の取得")
             .WithDescription("アクセストークンの署名検証に使用する公開鍵一覧を返します(RFC 7517)。予約中の鍵とローテーション後の旧鍵 (猶予期間中) も含まれます。")
             .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .RequireCors(AuthServer.Security.CorsExtensions.PublicMetadataPolicy)
             .AllowAnonymous();
     }
 

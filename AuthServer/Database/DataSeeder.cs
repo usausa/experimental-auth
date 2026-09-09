@@ -75,7 +75,7 @@ public static class DataSeeder
                 {
                     Id = "resource-server-001",
                     Name = "ResourceServer",
-                    Audience = "http://localhost:5180",
+                    Audience = "https://localhost:5180",
                     Description = "Default resource server",
                     Now = now
                 });
@@ -104,6 +104,11 @@ public static class DataSeeder
                     Now = now
                 });
         }
+
+        // 開発 DB の互換: HTTPS 化 (SEC-01) より前に seed された既定リソースサーバーの audience を現在の値に揃える
+        connection.Execute(
+            "UPDATE resource_servers SET audience = 'https://localhost:5180', updated_at = @Now WHERE resource_server_id = 'resource-server-001' AND audience = 'http://localhost:5180'",
+            new { Now = now });
 
         // カスタムクレームの例: profile スコープ付与時に ID Token / UserInfo へ department を出力する
         if (connection.ExecuteScalar<long>("SELECT COUNT(*) FROM claim_definitions WHERE claim_type = 'department'") == 0)

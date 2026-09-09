@@ -15,6 +15,8 @@ public static class UserInfoEndpoint
             .WithDescription("Bearer アクセストークンを検証し、トークンに紐づくユーザーのクレームを返します(OIDC Core 1.0 §5.3)。失効済みトークンは拒否します。")
             .Produces<object>(StatusCodes.Status200OK, "application/json")
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .RequireCors(AuthServer.Security.CorsExtensions.ApiPolicy)
+            .RequireRateLimiting(AuthServer.Security.RateLimitingExtensions.TokenPolicy)
             .AllowAnonymous();
     }
 

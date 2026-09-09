@@ -14,6 +14,7 @@ public static class DiscoveryEndpoint
             .WithSummary("OpenID Connect Discovery ドキュメントの取得")
             .WithDescription("認証サーバーのメタデータ(トークンエンドポイント URL、サポートするグラントタイプ等)を返します(RFC 8414 / OpenID Connect Discovery 1.0)。")
             .Produces<object>(StatusCodes.Status200OK, "application/json")
+            .RequireCors(AuthServer.Security.CorsExtensions.PublicMetadataPolicy)
             .AllowAnonymous();
     }
 
