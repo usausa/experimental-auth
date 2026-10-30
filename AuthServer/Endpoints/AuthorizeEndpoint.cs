@@ -156,7 +156,7 @@ public static class AuthorizeEndpoint
         else if (!AuthorizeResponse.IsSupportedResponseMode(responseMode))
         {
             return AuthorizeResponse.Error(
-                redirectUri, AuthorizeResponse.Query, "invalid_request",
+                context, redirectUri, AuthorizeResponse.Query, "invalid_request",
                 $"response_mode '{responseMode}' is not supported", state);
         }
 
@@ -256,10 +256,10 @@ public static class AuthorizeEndpoint
             AuditEvents.Authorize, AuditOutcome.Success, clientId, session.UserId, session.Username, ip,
             $"redirect flow; scope={scopeResult.GrantedScope}; response_mode={responseMode}; nonce={(nonce is null ? "no" : "yes")}"));
 
-        return AuthorizeResponse.Code(redirectUri, responseMode, code, state);
+        return AuthorizeResponse.Code(context, redirectUri, responseMode, code, state);
 
         IResult Deny(string error, string description) =>
-            AuthorizeResponse.Error(redirectUri, responseMode, error, description, state);
+            AuthorizeResponse.Error(context, redirectUri, responseMode, error, description, state);
     }
 
     //--------------------------------------------------------------------------------

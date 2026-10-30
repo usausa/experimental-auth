@@ -925,7 +925,8 @@ https://client.example.com/callback
 | SEC-13 | 監査ログ | 認証・発行・失効・管理操作 | ✅ | `audit_logs` に永続化し `/audit-logs` で参照（§6.5）。どのクライアント認証方式が使われたかは未記録（`TODO.md`） |
 | SEC-14 | トークン応答のキャッシュ禁止 | Token / Authorize / UserInfo / Revocation / Introspection / Device / Session | ✅ | RFC 6749 §5.1 の MUST。`Security/NoStoreExtensions.cs` のエンドポイントフィルターが `Cache-Control: no-store` と `Pragma: no-cache` を付与。Discovery と JWKS は公開メタデータなので対象外（JWKS は `max-age` で再取得を制御） |
 | SEC-16 | 401 応答の認証チャレンジ | Token / Revocation / Introspection / Device | ✅ | RFC 9110 §15.5.2 の MUST。RFC 6749 §5.2 と RFC 7662 §2.1 も要求する。クライアント認証に失敗した 401 に `WWW-Authenticate: Basic realm="<path>"` を添える |
-| SEC-15 | セキュリティヘッダー | Blazor 画面 / 全エンドポイント | 🔲 | CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy`・`Permissions-Policy`。現在は `UseHsts` のみ。同意画面は上被せクリックジャッキングの標的になるため `X-Frame-Options: DENY` と no-store が要る。`form_post` でクライアントへ POST する構成では CSP の `form-action` に IdP ホストの許可が必要（`TODO.md`） |
+| SEC-15 | セキュリティヘッダー | Blazor 画面 / 全エンドポイント | ✅ | `Security/SecurityHeadersExtensions.cs` のミドルウェアが全応答に付与。`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`（認可応答の URL に載る認可コードをリファラー経由で漏らさない）、`Permissions-Policy`、および CSP（`frame-ancestors 'none'` / `object-src 'none'` / `script-src 'self'`）。MudBlazor がインライン style を使うため `style-src` に `'unsafe-inline'`、Roboto のため Google Fonts を許可 |
+| SEC-17 | form_post 応答の個別 CSP | Authorization Endpoint | ✅ | `form_post` の応答は相手先へ POST するため、`form-action` にリダイレクト先のオリジンを、自動送信スクリプトを SHA-256 ハッシュで許可する専用 CSP に差し替える |
 
 認可コード・リフレッシュトークンはいずれも SHA-256 ハッシュ（小文字 16 進）で保存し、
 平文は DB に残しません。リフレッシュトークンはローテーション時に旧トークンを失効させ、

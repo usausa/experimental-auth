@@ -73,6 +73,59 @@ public sealed class ProtocolComplianceTests : IClassFixture<AuthServerFactory>
         Assert.StartsWith("Basic ", challenge, StringComparison.Ordinal);
     }
 
+    // SEC-15: 全応答に共通のセキュリティヘッダーが載る
+    [Theory]
+    [InlineData(Oauth.DiscoveryPath)]
+    [InlineData(Oauth.JwksPath)]
+    [InlineData(Oauth.UserInfoPath)]
+    [InlineData("/")]
+    public async Task SecurityHeadersArePresent(string path)
+    {
+        using var client = factory.CreateClient();
+        var response = await Oauth.GetAsync(client, path);
+
+        Assert.Equal("nosniff", response.Header("X-Content-Type-Options"));
+        Assert.Equal("DENY", response.Header("X-Frame-Options"));
+
+        // 認可コードを含む URL がリファラーとして外部へ渡らないようにする
+        Assert.Equal("no-referrer", response.Header("Referrer-Policy"));
+        Assert.NotNull(response.Header("Permissions-Policy"));
+
+        var csp = response.Header("Content-Security-Policy");
+        Assert.NotNull(csp);
+        Assert.Contains("frame-ancestors 'none'", csp, StringComparison.Ordinal);
+        Assert.Contains("object-src 'none'", csp, StringComparison.Ordinal);
+    }
+
+    // form_post の応答だけは相手先へ POST するため、専用の CSP で form-action と自動送信スクリプトを許可する
+    [Fact]
+    public async Task FormPostResponseCarriesItsOwnContentSecurityPolicy()
+    {
+        using var client = factory.CreateBrowserClient();
+        await Oauth.SignInAsync(client);
+        var (_, challenge) = Oauth.CreatePkce();
+
+        var response = await Oauth.GetAsync(client, Oauth.BuildAuthorizeUrl(
+            ("response_type", "code"),
+            ("client_id", "test-webapp"),
+            ("redirect_uri", Oauth.RedirectTarget),
+            ("scope", "openid"),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
+            ("nonce", Oauth.NewNonce()),
+            ("response_mode", "form_post")));
+
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        var csp = response.Header("Content-Security-Policy");
+        Assert.NotNull(csp);
+        Assert.Contains("form-action http://localhost:5173", csp, StringComparison.Ordinal);
+        Assert.Contains("script-src 'sha256-", csp, StringComparison.Ordinal);
+
+        // インライン属性ではなく <script> ブロックにしてハッシュで許可している
+        Assert.Contains("<script>document.forms[0].submit();</script>", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("onload=", response.Text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task UserInfoAcceptsTheAccessTokenInTheFormBody()
     {

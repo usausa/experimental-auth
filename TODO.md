@@ -26,6 +26,19 @@
 | M3a | 🌐 ブラウザリダイレクト（方式 A）の画面なしで作れる部分: セッション Cookie（`/account/session`）、GET `/connect/authorize` のリダイレクト応答とエラーリダイレクト、`response_mode`（`query` / `form_post`）、`prompt=none`、`max_age`、TestClient `authorize`（ローカル HTTP リスナー） | ✅ 完了（2026-09-09） |
 | M3b | 🌐 画面が要る残り: `/account/login`、同意画面と `consents` の読み書き、`/connect/logout` とログアウト確認画面、`prompt=login` / `consent`、外部 IdP、Front-Channel / Back-Channel Logout | 🔲 次 |
 
+### 実装フェーズ（残作業の進め方）
+
+M3a の後、残りを 6 フェーズに分けて進めます。P1〜P4 は画面なしで完結し、P5 以降で M3b の画面に入ります。
+
+| P | 内容 | 件数 | 状態 |
+|---|------|------|------|
+| P1 | 仕様の MUST: キャッシュ制御、UserInfo の POST、POST 認可要求と方式 B の移設、リフレッシュ時のスコープ縮小 | 4 | ✅ 完了（2026-09-09） |
+| P2 | セキュリティヘッダー（`SPEC.md` SEC-15）: CSP、`X-Frame-Options`、`Referrer-Policy` ほか | 1 | ✅ 完了（2026-09-09） |
+| P3 | 小さな仕様項目: RFC 9207 の `iss`、ID Token の `sid`、Discovery の動的生成、監査ログの認証方式、認可エンドポイントの 401、Content-Type エラーの形式、カスタムクレームのドット記法 | 7 | 🔲 次 |
+| P4 | 中規模の画面なし項目: セッションストア、`/connect/logout`、Back-Channel Logout、PAR、ACR / AMR、JAR、認可要求時の Resource Indicators、TestClient の自動リフレッシュ | 8 | 🔲 |
+| P5 | M3b の画面（基盤）: ログイン画面、同意画面と `consents`、ログアウト確認画面、`prompt=login` / `consent`、サンプルクライアント 2 種、TestClient のブラウザ起動 | 12 | 🔲 |
+| P6 | 追加機能（画面あり）: 外部 IdP、Front-Channel Logout、パスキー、TOTP、メール確認、ユーザー登録・パスワード変更・リセット、同意管理画面 | 10 | 🔲 |
+
 **アクセストークン失効の方針（方式 3）**: ResourceServer はオフライン検証のみで失効リストを参照しない。
 失効はリフレッシュトークンに対して確実に効かせ、アクセストークンは短寿命で対処する。
 AuthServer 自身のエンドポイント（UserInfo / Introspection）は失効リストを照合する（`SPEC.md` §6.5）。
@@ -199,9 +212,10 @@ ID Token と UserInfo は Phase 2 の実装に伴い先行して対応済みで�
 - [x] 期限切れ認可コード・リフレッシュトークンのクリーンアップジョブ (`Services/MaintenanceService.cs`)
 - [x] 期限切れ失効トークンのクリーンアップジョブ（猶予期間切れの鍵の退役も同じジョブ）
 - [x] リプレイ検出の共通基盤（`replay_guard`。一回限りの値を期限つきで記録し、期限切れは保守ジョブが削除。M2'）
-- [ ] セキュリティヘッダー（`SPEC.md` SEC-15）。CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy`・`Permissions-Policy`。
-      現在は `UseHsts` のみ。ログイン画面と同意画面（M3b）を作る前に入れる。`form_post` でクライアントへ POST する構成では
-      CSP の `form-action` に相手ホストの許可が要る点に注意
+- [x] セキュリティヘッダー（`SPEC.md` SEC-15、2026-09-09）。`Security/SecurityHeadersExtensions.cs` のミドルウェアで
+      CSP・`X-Frame-Options: DENY`・`X-Content-Type-Options`・`Referrer-Policy: no-referrer`・`Permissions-Policy` を全応答に付与。
+      `form_post` の認可応答だけは相手先の `form-action` と自動送信スクリプトのハッシュを許可する専用 CSP に差し替える。
+      `<ImportMap />` はインラインスクリプトを出力して CSP に反するため App.razor から外した（bare specifier での import は未使用）
 - [ ] 監査ログにクライアント認証方式を記録する。要求内容の JSON も残すと追跡しやすい
 - [x] 🖥️ 監査ログ（`audit_logs`。クライアント認証失敗・トークン発行 / 拒否・認可・デバイス承認 / 拒否・失効・リプレイ検出・鍵操作・管理画面の変更を記録。`/audit-logs` で絞り込み表示。`AuditLogRetentionDays` 経過分は保守ジョブが削除。M2'）
 - [x] TestClient: トークン失効実装（`revoke --token-type all|access|refresh`）
@@ -308,8 +322,7 @@ M2 で ES256 と Resource Indicators、M2' で JWT Replay 検出・`nonce` 厳�
 
 冒頭の「マイルストーン計画」を参照してください。M2 / M2'（JWT Replay 検出 / `nonce` 厳密検証 / 監査ログ / カスタムクレーム）/ M2''（HTTPS / レート制限 / CORS / 自動テスト）は完了し、次は M3（🌐 方式 A）です。
 🌐 なしで残る候補は ACR / AMR のモデル化、🖥️ の TOTP / MFA とメール確認、Resource Indicators の認可要求時束縛です。
-「仕様と実装の乖離」に挙げた MUST 4 件（キャッシュ制御、UserInfo の POST、POST 認可要求と方式 B の移設、リフレッシュ時のスコープ縮小）は
-2026-09-09 にすべて対応しました。次はセキュリティヘッダーを、ログイン画面と同意画面を作る前に入れます。
+冒頭の「実装フェーズ」の表を参照してください。P1（仕様の MUST）と P2（セキュリティヘッダー）は 2026-09-09 に完了し、次は P3（小さな仕様項目）です。
 
 ---
 

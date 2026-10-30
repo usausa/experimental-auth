@@ -103,6 +103,10 @@ else
 
 // SEC-01: HTTPS 必須。開発環境は dev 証明書で HTTPS のみをリッスンし、本番相当では HTTP を HTTPS へリダイレクトして HSTS を送る
 app.UseHttpsRedirection();
+
+// SEC-15 セキュリティヘッダー。エラー応答にも載せたいのでパイプラインの早い位置に置く
+app.UseAuthServerSecurityHeaders();
+
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
