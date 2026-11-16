@@ -46,7 +46,7 @@
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Time">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.OccurredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</MudText>
         </MudTd>
         <MudTd DataLabel="Event">
             <MudText Class="text-monospace">@context.Event</MudText>

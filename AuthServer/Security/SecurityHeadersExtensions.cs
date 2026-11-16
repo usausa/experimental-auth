@@ -33,7 +33,7 @@ public static class SecurityHeadersExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        return app.Use(async (context, next) =>
+        return app.Use((context, next) =>
         {
             var headers = context.Response.Headers;
             headers.XContentTypeOptions = "nosniff";
@@ -44,7 +44,7 @@ public static class SecurityHeadersExtensions
             headers["Permissions-Policy"] = PermissionsPolicy;
             headers.ContentSecurityPolicy = DefaultContentSecurityPolicy;
 
-            await next(context);
+            return next(context);
         });
     }
 }

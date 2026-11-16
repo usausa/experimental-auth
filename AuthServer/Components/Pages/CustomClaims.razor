@@ -50,7 +50,7 @@
         </MudTd>
         <MudTd DataLabel="Description">@(context.Description ?? "-")</MudTd>
         <MudTd DataLabel="Updated">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</MudText>
         </MudTd>
         <MudTd Class="table-actions">
             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => ShowEditDialogAsync(context)" />

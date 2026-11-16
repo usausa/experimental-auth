@@ -1,6 +1,6 @@
-extern alias ResourceServerApp;
-
 namespace ResourceServer.Tests;
+
+extern alias ResourceServerApp;
 
 using AuthServer.Tests.Infrastructure;
 

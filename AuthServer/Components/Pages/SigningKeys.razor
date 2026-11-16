@@ -45,13 +45,13 @@
             <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@GetStatusColor(context)">@GetStatusText(context)</MudChip>
         </MudTd>
         <MudTd DataLabel="Created">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</MudText>
         </MudTd>
         <MudTd DataLabel="Activates">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ActivatesAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ActivatesAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "-")</MudText>
         </MudTd>
         <MudTd DataLabel="Expires">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(context.ExpiresAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "-")</MudText>
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>
