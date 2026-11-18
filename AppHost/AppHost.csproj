@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
-    <CodeAnalysisRuleSet>..\Analyzers.ruleset</CodeAnalysisRuleSet>
     <AspireUseCliBundle>true</AspireUseCliBundle>
     <UserSecretsId>apphost-experimental-auth</UserSecretsId>
   </PropertyGroup>
